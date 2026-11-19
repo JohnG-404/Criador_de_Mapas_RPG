@@ -216,3 +216,21 @@ describe('névoa de guerra', () => {
     expect(ed.doc.fog.get(0, 0)).toBe(0);
   });
 });
+
+describe('gerar mapa', () => {
+  it('substitui terreno, paredes e objetos num passo só e mantém os tokens', () => {
+    const ed = new Editor();
+    ed.setTool('token');
+    ed.pointerDown({ x: 48, y: 48 }); ed.pointerUp();
+    ed.generate('dungeon', 5);
+    expect(ed.doc.walls.size).toBeGreaterThan(0);
+    expect(ed.doc.objects.size).toBeGreaterThan(0);
+    expect(ed.doc.tokens.size).toBe(1);
+    ed.undo();
+    expect(ed.doc.walls.size).toBe(0);
+    expect(ed.doc.objects.size).toBe(0);
+    expect(ed.doc.terrain.get(0, 0)).toBe(1);
+    ed.redo();
+    expect(ed.doc.walls.size).toBeGreaterThan(0);
+  });
+});

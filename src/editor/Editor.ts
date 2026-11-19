@@ -6,7 +6,8 @@ import {
   hitSegment, nearestEdge, rectangleSegments, samePoint, snapToVertex, subtractCollinear, type WallSegment,
 } from '../core/doc/walls';
 import type { Cell, Point } from '../core/grid/GridSystem';
-import { History } from '../core/history/History';
+import { CompositeCommand, History } from '../core/history/History';
+import { generate, type GeneratorKind } from '../core/procgen';
 import { PaintCommand } from '../core/history/PaintCommand';
 import { floodFill } from '../core/tools/floodFill';
 import { strokeCells } from '../core/tools/strokeCells';
@@ -194,6 +195,48 @@ export class Editor {
 
   newMap(options: NewMapOptions) {
     this.loadDocument(new MapDocument(options));
+  }
+
+  /**
+   * Substitui o conteúdo do mapa pelo resultado de um gerador (terreno,
+   * paredes e objetos; tokens ficam). Um passo só no histórico.
+   */
+  generate(kind: GeneratorKind, seed: number) {
+    this.endGestures();
+    const { doc } = this;
+    const grid = doc.grid;
+    const result = generate(kind, {
+      cols: grid.cols,
+      rows: grid.rows,
+      cellSize: grid.cellSize,
+      seed,
+      hex: grid.kind === 'hex',
+      center: (col, row) => grid.cellToWorld({ col, row }),
+    });
+    const terrain = new PaintCommand(doc.terrain, 'Terreno gerado');
+    for (let row = 0; row < grid.rows; row++) {
+      for (let col = 0; col < grid.cols; col++) terrain.paint(col, row, result.terrain[row * grid.cols + col]);
+    }
+    const fog = new PaintCommand(doc.fog, 'Névoa');
+    for (let row = 0; row < grid.rows; row++) for (let col = 0; col < grid.cols; col++) fog.paint(col, row, FOG_CLEAR);
+    const walls = new ItemsCommand(doc.walls, 'Paredes geradas');
+    for (const w of doc.walls.all()) walls.set(w.id, null);
+    for (const w of result.walls) {
+      const id = newId(w.kind === 'door' ? 'd' : 'w');
+      walls.set(id, { id, ...w });
+    }
+    const objects = new ItemsCommand(doc.objects, 'Objetos gerados');
+    for (const o of doc.objects.all()) objects.set(o.id, null);
+    for (const o of result.objects) {
+      const id = newId('o');
+      objects.set(id, { id, ...o });
+    }
+    doc.terrain.flush();
+    doc.fog.flush();
+    doc.walls.emit();
+    doc.objects.emit();
+    this.set({ selection: null });
+    this.history.push(new CompositeCommand('Gerar mapa', [terrain, fog, walls, objects]));
   }
 
   /** Troca o documento (mapa novo, arquivo aberto, salvamento automático). */

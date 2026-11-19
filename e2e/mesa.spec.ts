@@ -114,3 +114,22 @@ test('janela dos jogadores recebe o mapa e as edições', async ({ page }) => {
   // A janela do jogador não tem painel de ferramentas.
   await expect(player.getByRole('radiogroup', { name: 'Ferramenta' })).toHaveCount(0);
 });
+
+test('gera uma masmorra com semente e desfaz', async ({ page }) => {
+  await page.getByRole('button', { name: 'Gerar', exact: true }).click();
+  await page.getByLabel('Masmorra').check();
+  await page.getByLabel('Semente').fill('dragao');
+  await page.getByRole('button', { name: 'Gerar', exact: true }).last().click();
+  await expect(page.getByTestId('notice')).toContainText('semente dragao');
+  const counts = page.getByTestId('content-counts');
+  await expect(counts).not.toContainText('0 paredes');
+  const first = await counts.textContent();
+
+  // Mesma semente, mesmo resultado.
+  await page.keyboard.press('Control+z');
+  await expect(counts).toContainText('0 paredes · 0 objetos');
+  await page.getByRole('button', { name: 'Gerar', exact: true }).click();
+  await page.getByLabel('Semente').fill('dragao');
+  await page.getByRole('button', { name: 'Gerar', exact: true }).last().click();
+  await expect(counts).toHaveText(first!);
+});

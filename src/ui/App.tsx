@@ -6,6 +6,8 @@ import { Editor } from '../editor/Editor';
 import { loadAutosave, readMapFile, saveBlob, saveMapFile, startAutosave } from '../editor/persistence';
 import { PLAYER_QUERY, startPlayerBroadcast } from '../editor/playerSync';
 import { MapView } from '../render/MapView';
+import type { GeneratorKind } from '../core/procgen';
+import { GenerateDialog } from './GenerateDialog';
 import { NewMapDialog } from './NewMapDialog';
 import { ToolPanel } from './ToolPanel';
 import { useShortcuts } from './useShortcuts';
@@ -23,6 +25,9 @@ export function App() {
   const [hover, setHover] = useState<Cell | null>(null);
   const [zoom, setZoom] = useState(1);
   const [newMapOpen, setNewMapOpen] = useState(false);
+  const [genOpen, setGenOpen] = useState(false);
+  const [lastGen, setLastGen] = useState<{ kind: GeneratorKind; seed: string } | null>(null);
+  const dialogOpen = newMapOpen || genOpen;
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -73,14 +78,14 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || newMapOpen) return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || dialogOpen) return;
       const k = e.key.toLowerCase();
       if (k === 's') { e.preventDefault(); void save(); }
       else if (k === 'o') { e.preventDefault(); open(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [save, open, newMapOpen]);
+  }, [save, open, dialogOpen]);
 
   useEffect(() => {
     const view = new MapView(editor, { onHoverCell: setHover, onZoomChange: setZoom });
@@ -94,7 +99,7 @@ export function App() {
     };
   }, [editor]);
 
-  useShortcuts(editor, !newMapOpen);
+  useShortcuts(editor, !dialogOpen);
 
   const doc = editor.doc;
   const opts = doc.options;
@@ -106,10 +111,11 @@ export function App() {
         <div className="brand">
           <img src="./favicon.svg" alt="" width={22} height={22} />
           <span>Atlas Board</span>
-          <span className="tag">fase 3</span>
+          <span className="tag">fase 4</span>
         </div>
         <div className="toolbar" role="toolbar" aria-label="Arquivo e histórico">
           <button onClick={() => setNewMapOpen(true)}>Novo mapa</button>
+          <button onClick={() => setGenOpen(true)} title="Gerar masmorra, caverna ou região a partir de uma semente">Gerar</button>
           <button onClick={open} title="Abrir arquivo .rpgmap (Ctrl+O)">Abrir</button>
           <button onClick={() => void save()} title="Salvar arquivo .rpgmap (Ctrl+S)">Salvar</button>
           <button onClick={() => void exportPng()} title="Exportar o mapa inteiro como imagem PNG">Exportar PNG</button>
@@ -171,6 +177,19 @@ export function App() {
         <div className={`notice${notice.error ? ' error' : ''}`} role={notice.error ? 'alert' : 'status'} data-testid="notice">
           {notice.text}
         </div>
+      )}
+      {genOpen && (
+        <GenerateDialog
+          hex={doc.grid.kind === 'hex'}
+          initial={lastGen}
+          onCancel={() => setGenOpen(false)}
+          onGenerate={(kind, seedText, seed) => {
+            editor.generate(kind, seed);
+            setLastGen({ kind, seed: seedText });
+            setGenOpen(false);
+            notify(`Mapa gerado (semente ${seedText})`);
+          }}
+        />
       )}
       {newMapOpen && (
         <NewMapDialog
