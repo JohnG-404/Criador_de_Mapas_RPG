@@ -7,4 +7,6 @@ export const theme = {
   gridLine: 0x15120d,
   gridBorder: 0x2a2219,
   hoverFill: 0xf2c14e,
+  selection: 0x5ec8ff,
+  danger: 0xe5484d,
 };

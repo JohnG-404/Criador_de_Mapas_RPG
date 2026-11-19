@@ -23,6 +23,13 @@ npm run build      # gera a versão final em dist/
 | Pintar | Botão esquerdo com Pincel (B), Borracha (E) ou Balde (G) |
 | Escolher terreno | Painel à esquerda ou teclas 1 a 4 |
 | Tamanho do pincel | Controle deslizante ou `[` e `]` |
+| Paredes | Parede (W): arraste entre cantos de células; com Shift cria uma sala |
+| Portas | Porta (D): clique numa borda de célula; clicar de novo volta a ser parede |
+| Apagar parede ou porta | Alt + clique com Parede ou Porta |
+| Objetos | Objeto (O): escolha no painel e clique; Shift solta sem encaixe |
+| Tokens | Token (T): clique numa célula; nome e cor no painel com Selecionar |
+| Selecionar | Selecionar (V): clique e arraste para mover; R gira (Shift+R ao contrário), `[` `]` mudam o tamanho, Delete apaga, Esc solta |
+| Camadas | Painel Camadas: olho oculta, cadeado trava |
 | Desfazer / refazer | Ctrl+Z / Ctrl+Shift+Z (ou Ctrl+Y) |
 | Mover o mapa | Botão direito ou do meio, Espaço + arrastar, ferramenta Mover (H) ou setas |
 | Zoom | Roda do mouse, pinça no trackpad, `+` e `-`; `0` enquadra o mapa |
@@ -43,4 +50,4 @@ tools/        scripts auxiliares (ex.: gerar as propostas de estilo)
 
 ## Prévia online (GitHub Pages)
 
-A cada push na `main`, o workflow `Deploy da prévia` publica o editor em https://johng-404.github.io/Criador_de_Mapas_RPG/. É preciso ativar uma vez: Settings → Pages → Source: **GitHub Actions**.
+A cada push na `main`, o workflow `Deploy da prévia` publica o editor em https://johng-404.github.io/Criador_de_Mapas_RPG/.

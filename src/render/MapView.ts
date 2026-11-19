@@ -1,8 +1,10 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import { Camera } from '../core/camera/Camera';
 import type { MapDocument } from '../core/doc/MapDocument';
+import { objectAsset } from '../core/doc/objects';
 import { sameCell, type Cell, type CellRange, type Point } from '../core/grid/GridSystem';
-import type { Editor } from '../editor/Editor';
+import type { Editor, LayerId, LayerState } from '../editor/Editor';
+import { ContentRenderer } from './ContentRenderer';
 import { TerrainRenderer } from './TerrainRenderer';
 import { theme } from './theme';
 
@@ -35,6 +37,12 @@ export class MapView {
   private terrainHolder = new Container();
   private gridLayer = new Graphics();
   private hoverLayer = new Graphics();
+  private contentHolder = new Container();
+  private content: ContentRenderer | null = null;
+  private overlayLayer = new Graphics();
+  private layers: Record<LayerId, LayerState> | null = null;
+  private lastPointer: Point | null = null;
+  private altDown = false;
   private hoverCell: Cell | null = null;
   private dirty = true;
   private gridCache: (CellRange & { zoom: number; showGrid: boolean }) | null = null;
@@ -79,7 +87,7 @@ export class MapView {
     canvas.setAttribute('aria-label', 'Área do mapa');
     canvas.dataset.testid = 'map-canvas';
 
-    this.world.addChild(this.mapLayer, this.terrainHolder, this.gridLayer, this.hoverLayer);
+    this.world.addChild(this.mapLayer, this.terrainHolder, this.gridLayer, this.contentHolder, this.hoverLayer, this.overlayLayer);
     this.app.stage.addChild(this.world);
     this.camera.setViewSize(this.app.screen.width, this.app.screen.height);
     this.bindInput();
@@ -87,6 +95,7 @@ export class MapView {
     // Mudanças de estado do editor (grid visível, ferramenta, mapa novo).
     this.cleanup.push(this.editor.subscribe(() => this.onEditorState()));
     this.cleanup.push(this.editor.history.onChange(() => this.invalidate()));
+    this.cleanup.push(this.editor.onOverlay(() => this.invalidate()));
 
     await this.loadDocument();
     this.app.stop();
@@ -106,6 +115,7 @@ export class MapView {
     this.cleanup.forEach((fn) => fn());
     this.cleanup = [];
     this.terrain?.destroy();
+    this.content?.destroy();
     if ((this.app as unknown as { renderer?: unknown }).renderer) this.app.destroy(true, { children: true });
   }
 
@@ -124,14 +134,26 @@ export class MapView {
 
   private async loadDocument() {
     this.terrain?.destroy();
+    this.content?.destroy();
+    this.content = null;
     this.doc = this.editor.doc;
     const renderer = new TerrainRenderer(this.doc);
+    const content = new ContentRenderer(this.doc);
     this.terrain = renderer;
-    await renderer.load();
-    if (this.destroyed || this.terrain !== renderer) return;
+    await Promise.all([renderer.load(), content.load()]);
+    if (this.destroyed || this.terrain !== renderer) {
+      content.destroy();
+      return;
+    }
     renderer.buildAll();
     renderer.onChange = () => this.invalidate();
     this.terrainHolder.addChild(renderer.container);
+    this.content = content;
+    content.onChange = () => this.invalidate();
+    content.start();
+    this.contentHolder.addChild(content.objects, content.walls, content.tokens);
+    this.layers = null;
+    this.applyLayers();
     this.gridCache = null;
     this.mapCacheZoom = 0;
     this.hoverCell = null;
@@ -148,11 +170,24 @@ export class MapView {
       this.showGrid = s.showGrid;
       this.gridCache = null;
     }
+    this.applyLayers();
     this.updateCursor();
     this.invalidate();
   }
 
   private invalidate() { this.dirty = true; }
+
+  private applyLayers() {
+    const layers = this.editor.getState().layers;
+    if (layers === this.layers) return;
+    this.layers = layers;
+    this.terrainHolder.visible = layers.terrain.visible;
+    if (this.content) {
+      this.content.walls.visible = layers.walls.visible;
+      this.content.objects.visible = layers.objects.visible;
+      this.content.tokens.visible = layers.tokens.visible;
+    }
+  }
 
   private afterCameraChange() {
     this.camera.clampTo(this.doc.grid.worldBounds());
@@ -178,6 +213,7 @@ export class MapView {
     this.drawMap();
     this.drawGrid();
     this.drawHover();
+    this.drawOverlay();
     this.app.render();
   }
 
@@ -278,6 +314,48 @@ export class MapView {
     g.stroke({ color: theme.hoverFill, width: 1.5 / z, alpha: 0.9 });
   }
 
+  /** Prévias de parede e porta, alvo da borracha e contorno da seleção. */
+  private drawOverlay() {
+    const g = this.overlayLayer.clear();
+    const z = this.camera.zoom;
+    const cell = this.doc.grid.cellSize;
+    const { wallPreview, doorPreview, eraseTarget } = this.editor.overlay;
+    if (wallPreview) {
+      for (const [a, b] of wallPreview.segments) g.moveTo(a.x, a.y).lineTo(b.x, b.y);
+      if (wallPreview.segments.length) {
+        g.stroke({ width: cell * 0.3, color: theme.hoverFill, alpha: 0.45, cap: 'round', join: 'round' });
+        for (const [a, b] of wallPreview.segments) g.moveTo(a.x, a.y).lineTo(b.x, b.y);
+        g.stroke({ width: 1.5 / z, color: theme.hoverFill, alpha: 1 });
+      }
+      g.circle(wallPreview.snap.x, wallPreview.snap.y, 4 / z).fill(theme.hoverFill).stroke({ width: 1.5 / z, color: 0x000000, alpha: 0.6 });
+    }
+    if (doorPreview) {
+      g.moveTo(doorPreview.a.x, doorPreview.a.y).lineTo(doorPreview.b.x, doorPreview.b.y)
+        .stroke({ width: cell * 0.22, color: theme.hoverFill, alpha: 0.55, cap: 'butt' });
+    }
+    if (eraseTarget) {
+      g.moveTo(eraseTarget.a.x, eraseTarget.a.y).lineTo(eraseTarget.b.x, eraseTarget.b.y)
+        .stroke({ width: cell * 0.36, color: theme.danger, alpha: 0.6, cap: 'round' });
+    }
+    const pad = 3 / z;
+    const obj = this.editor.selectedObject();
+    if (obj && this.layers?.objects.visible) {
+      const a = objectAsset(obj.asset);
+      if (a) {
+        const hw = (a.w * cell * obj.scale) / 2 + pad;
+        const hh = (a.h * cell * obj.scale) / 2 + pad;
+        const r = (obj.rot * Math.PI) / 180;
+        const cos = Math.cos(r), sin = Math.sin(r);
+        const pts = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].flatMap(([x, y]) => [obj.x + x * cos - y * sin, obj.y + x * sin + y * cos]);
+        g.poly(pts).stroke({ width: 2 / z, color: theme.selection, alpha: 1 });
+      }
+    }
+    const tok = this.editor.selectedToken();
+    if (tok && this.layers?.tokens.visible) {
+      g.circle(tok.x, tok.y, (tok.size * cell) / 2 * 0.9 + pad).stroke({ width: 2 / z, color: theme.selection, alpha: 1 });
+    }
+  }
+
   private setHover(cell: Cell | null) {
     if (sameCell(this.hoverCell, cell)) return;
     this.hoverCell = cell;
@@ -295,6 +373,8 @@ export class MapView {
     if (!canvas) return;
     if (this.drag?.kind === 'pan') canvas.style.cursor = 'grabbing';
     else if (this.spaceDown || !this.editor.toolEdits) canvas.style.cursor = 'grab';
+    else if (this.editor.getState().tool === 'select') canvas.style.cursor = 'default';
+    else if (!this.editor.toolLayerEditable) canvas.style.cursor = 'not-allowed';
     else canvas.style.cursor = 'crosshair';
   }
 
@@ -326,7 +406,7 @@ export class MapView {
       canvas.setPointerCapture(e.pointerId);
       if (useTool) {
         this.drag = { kind: 'tool', pointerId: e.pointerId };
-        this.editor.pointerDown(this.camera.screenToWorld(p));
+        this.editor.pointerDown(this.camera.screenToWorld(p), mods(e));
       } else {
         this.drag = { kind: 'pan', pointerId: e.pointerId, last: p };
       }
@@ -342,9 +422,13 @@ export class MapView {
           d.last = p;
           this.afterCameraChange();
         } else {
-          this.editor.pointerMove(this.camera.screenToWorld(p));
+          this.editor.pointerMove(this.camera.screenToWorld(p), mods(e));
         }
       }
+      const world = this.camera.screenToWorld(p);
+      this.lastPointer = world;
+      this.altDown = e.altKey;
+      if (!this.drag) this.editor.hover(world, { alt: e.altKey });
       this.setHover(this.doc.grid.worldToCell(this.camera.screenToWorld(p)));
     });
 
@@ -356,8 +440,26 @@ export class MapView {
     };
     on(canvas, 'pointerup', endDrag);
     on(canvas, 'pointercancel', endDrag);
-    on(canvas, 'pointerleave', () => { if (!this.drag) this.setHover(null); });
+    on(canvas, 'pointerleave', () => {
+      if (this.drag) return;
+      this.lastPointer = null;
+      this.setHover(null);
+      this.editor.hover(null);
+    });
     on(canvas, 'contextmenu', (e) => e.preventDefault());
+
+    // Alt muda a prévia de parede para "apagar"; Shift muda a parede para sala.
+    const modKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Alt') return;
+      e.preventDefault();
+      const alt = e.type === 'keydown';
+      if (alt === this.altDown) return;
+      this.altDown = alt;
+      if (!this.drag) this.editor.hover(this.lastPointer, { alt });
+    };
+    on(window, 'keydown', modKey);
+    on(window, 'keyup', modKey);
+    on(window, 'blur', () => { this.altDown = false; this.spaceDown = false; this.updateCursor(); });
 
     on(window, 'keydown', (e) => {
       if (isTypingTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -380,6 +482,10 @@ export class MapView {
     });
     this.updateCursor();
   }
+}
+
+function mods(e: PointerEvent) {
+  return { shift: e.shiftKey, alt: e.altKey };
 }
 
 function isTypingTarget(t: EventTarget | null) {

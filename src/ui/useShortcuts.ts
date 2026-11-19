@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { TERRAINS } from '../core/doc/terrain';
 import { TOOLS, type Editor } from '../editor/Editor';
 
-/** Atalhos de teclado do editor (ferramentas, terrenos, pincel e histórico). */
+/** Atalhos de teclado do editor (ferramentas, terrenos, pincel, seleção e histórico). */
 export function useShortcuts(editor: Editor, enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
@@ -24,8 +24,18 @@ export function useShortcuts(editor: Editor, enabled: boolean) {
       if (tool) { editor.setTool(tool.id); e.preventDefault(); return; }
       const n = Number(e.key);
       if (n >= 1 && n <= TERRAINS.length) { editor.setTerrain(TERRAINS[n - 1].id); e.preventDefault(); return; }
-      if (e.key === '[') { editor.setBrushSize(editor.getState().brushSize - 1); e.preventDefault(); }
-      if (e.key === ']') { editor.setBrushSize(editor.getState().brushSize + 1); e.preventDefault(); }
+      const hasSelection = editor.getState().selection !== null;
+      if (e.key === '[' || e.key === ']') {
+        const step = e.key === ']' ? 1 : -1;
+        if (hasSelection) editor.resizeSelection(step);
+        else editor.setBrushSize(editor.getState().brushSize + step);
+        e.preventDefault();
+        return;
+      }
+      if (!hasSelection) return;
+      if (e.key === 'Delete' || e.key === 'Backspace') { editor.deleteSelection(); e.preventDefault(); }
+      else if (key === 'r') { editor.rotateSelection(e.shiftKey ? -15 : 15); e.preventDefault(); }
+      else if (e.key === 'Escape') { editor.clearSelection(); e.preventDefault(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
