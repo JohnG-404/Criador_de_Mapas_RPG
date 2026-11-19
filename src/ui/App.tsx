@@ -35,7 +35,7 @@ export function App() {
       <header className="topbar">
         <div className="brand">
           <img src="./favicon.svg" alt="" width={22} height={22} />
-          <span>Criador de Mapas RPG</span>
+          <span>Atlas Board</span>
           <span className="tag">fase 0</span>
         </div>
         <div className="toolbar" role="toolbar" aria-label="Visualização">

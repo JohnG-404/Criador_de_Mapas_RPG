@@ -1,9 +1,10 @@
 name: Deploy da prévia (GitHub Pages)
 
-# Só roda depois que o GitHub Pages for ativado no repositório
-# (Settings → Pages → Source: GitHub Actions). Em repositório privado,
-# o Pages exige plano pago do GitHub; ver README.
+# Publica a prévia a cada push na main. Requer o GitHub Pages ativado
+# no repositório (Settings → Pages → Source: GitHub Actions).
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

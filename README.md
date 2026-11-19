@@ -1,6 +1,6 @@
-# Criador de Mapas RPG
+# Atlas Board
 
-Editor de mapas para RPG de mesa, no navegador. Primeiro em 2D (grid quadrado e hexagonal), com visualização 3D planejada para uma fase futura.
+Atlas Board é um editor de mapas para RPG de mesa, no navegador. Primeiro em 2D (grid quadrado e hexagonal), com visualização 3D planejada para uma fase futura.
 
 O planejamento completo está em [docs/planejamento.md](docs/planejamento.md).
 
@@ -31,6 +31,4 @@ tools/        scripts auxiliares (ex.: gerar as propostas de estilo)
 
 ## Prévia online (GitHub Pages)
 
-O workflow `Deploy da prévia` publica a pasta `dist/` no GitHub Pages. Para usar:
-1. Settings → Pages → Source: **GitHub Actions**. (Em repositório privado, o GitHub Pages exige plano pago; em repositório público é gratuito.)
-2. Actions → Deploy da prévia → Run workflow. Depois de ativado, o gatilho pode passar a ser automático a cada push na `main`.
+A cada push na `main`, o workflow `Deploy da prévia` publica o editor em https://johng-404.github.io/Criador_de_Mapas_RPG/. É preciso ativar uma vez: Settings → Pages → Source: **GitHub Actions**.

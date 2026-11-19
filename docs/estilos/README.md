@@ -10,10 +10,6 @@ As três imagens mostram **o mesmo mapa de exemplo** (sala com mesa, baú, tocha
 
 A escolha define a paleta, o traço das paredes e o estilo do pacote de assets inicial. A interface do editor continua escura nos três casos.
 
-## Propostas de nome
+## Nome
 
-1. **Forja de Mapas**
-2. **Atlas da Mesa**
-3. **Cartógrafo RPG**
-
-Ainda não foi feita pesquisa de marca registrada; isso entra antes do beta público.
+Escolhido: **Atlas Board** (19/11/2026). Ainda falta a pesquisa de marca registrada antes do beta público.
