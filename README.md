@@ -30,6 +30,10 @@ npm run build      # gera a versão final em dist/
 | Tokens | Token (T): clique numa célula; nome e cor no painel com Selecionar |
 | Selecionar | Selecionar (V): clique e arraste para mover; R gira (Shift+R ao contrário), `[` `]` mudam o tamanho, Delete apaga, Esc solta |
 | Camadas | Painel Camadas: olho oculta, cadeado trava |
+| Névoa de guerra | Névoa (N): Cobrir ou Revelar com o pincel, Alt inverte; botões Cobrir tudo e Revelar tudo |
+| Salvar / abrir | Botões Salvar e Abrir (Ctrl+S / Ctrl+O), arquivo `.rpgmap`. O mapa também é salvo sozinho no navegador |
+| Exportar imagem | Exportar PNG (mapa inteiro, sem névoa, com o grid se ele estiver ligado) |
+| Mostrar aos jogadores | Janela dos jogadores: abre uma janela só com o mapa e a névoa opaca, atualizada a cada edição (arraste para outro monitor ou TV) |
 | Desfazer / refazer | Ctrl+Z / Ctrl+Shift+Z (ou Ctrl+Y) |
 | Mover o mapa | Botão direito ou do meio, Espaço + arrastar, ferramenta Mover (H) ou setas |
 | Zoom | Roda do mouse, pinça no trackpad, `+` e `-`; `0` enquadra o mapa |

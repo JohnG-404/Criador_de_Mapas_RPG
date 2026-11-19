@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { TERRAINS } from '../core/doc/terrain';
 import type { Cell } from '../core/grid/GridSystem';
+import { mapFileName } from '../core/doc/serialize';
 import { Editor } from '../editor/Editor';
+import { loadAutosave, readMapFile, saveBlob, saveMapFile, startAutosave } from '../editor/persistence';
+import { PLAYER_QUERY, startPlayerBroadcast } from '../editor/playerSync';
 import { MapView } from '../render/MapView';
 import { NewMapDialog } from './NewMapDialog';
 import { ToolPanel } from './ToolPanel';
@@ -10,11 +13,74 @@ import { useShortcuts } from './useShortcuts';
 export function App() {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<MapView | null>(null);
-  const [editor] = useState(() => new Editor());
+  const [editor] = useState(() => {
+    const ed = new Editor();
+    const saved = loadAutosave();
+    if (saved) ed.loadDocument(saved);
+    return ed;
+  });
   const state = useSyncExternalStore(editor.subscribe, editor.getState);
   const [hover, setHover] = useState<Cell | null>(null);
   const [zoom, setZoom] = useState(1);
   const [newMapOpen, setNewMapOpen] = useState(false);
+  const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const notify = useCallback((text: string, error = false) => setNotice({ text, error }), []);
+  useEffect(() => {
+    if (!notice) return;
+    const t = window.setTimeout(() => setNotice(null), notice.error ? 6000 : 2500);
+    return () => window.clearTimeout(t);
+  }, [notice]);
+
+  useEffect(() => {
+    let warned = false;
+    const stopAutosave = startAutosave(editor, (ok) => {
+      if (!ok && !warned) {
+        warned = true;
+        notify('Não foi possível salvar automaticamente no navegador. Use Salvar para guardar o arquivo.', true);
+      }
+    });
+    const stopBroadcast = startPlayerBroadcast(editor);
+    return () => { stopAutosave(); stopBroadcast(); };
+  }, [editor, notify]);
+
+  const save = useCallback(async () => {
+    try {
+      if (await saveMapFile(editor.doc)) notify('Mapa salvo');
+    } catch {
+      notify('Não foi possível salvar o arquivo.', true);
+    }
+  }, [editor, notify]);
+
+  const open = useCallback(() => fileRef.current?.click(), []);
+
+  const exportPng = useCallback(async () => {
+    const view = viewRef.current;
+    if (!view) return;
+    try {
+      const blob = await view.exportPng({ grid: editor.getState().showGrid });
+      const name = mapFileName(editor.doc.options.name).replace(/\.rpgmap$/, '.png');
+      if (await saveBlob(blob, name, { description: 'Imagem PNG', accept: { 'image/png': ['.png'] } })) notify('Imagem exportada');
+    } catch {
+      notify('Não foi possível exportar a imagem.', true);
+    }
+  }, [editor, notify]);
+
+  const openPlayerWindow = () => {
+    window.open(`${location.pathname}?${PLAYER_QUERY}`, 'atlas-board-jogadores', 'popup,width=1280,height=800');
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || newMapOpen) return;
+      const k = e.key.toLowerCase();
+      if (k === 's') { e.preventDefault(); void save(); }
+      else if (k === 'o') { e.preventDefault(); open(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [save, open, newMapOpen]);
 
   useEffect(() => {
     const view = new MapView(editor, { onHoverCell: setHover, onZoomChange: setZoom });
@@ -40,10 +106,31 @@ export function App() {
         <div className="brand">
           <img src="./favicon.svg" alt="" width={22} height={22} />
           <span>Atlas Board</span>
-          <span className="tag">fase 2</span>
+          <span className="tag">fase 3</span>
         </div>
         <div className="toolbar" role="toolbar" aria-label="Arquivo e histórico">
           <button onClick={() => setNewMapOpen(true)}>Novo mapa</button>
+          <button onClick={open} title="Abrir arquivo .rpgmap (Ctrl+O)">Abrir</button>
+          <button onClick={() => void save()} title="Salvar arquivo .rpgmap (Ctrl+S)">Salvar</button>
+          <button onClick={() => void exportPng()} title="Exportar o mapa inteiro como imagem PNG">Exportar PNG</button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".rpgmap,application/json"
+            hidden
+            data-testid="open-file"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              try {
+                editor.loadDocument(await readMapFile(file));
+                notify(`Aberto: ${file.name}`);
+              } catch (err) {
+                notify((err as Error).message || 'Não foi possível abrir o arquivo.', true);
+              }
+            }}
+          />
           <span className="sep" />
           <button onClick={() => editor.undo()} disabled={!state.canUndo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer">↶</button>
           <button onClick={() => editor.redo()} disabled={!state.canRedo} title="Refazer (Ctrl+Shift+Z)" aria-label="Refazer">↷</button>
@@ -53,6 +140,10 @@ export function App() {
           <span className="zoom" data-testid="zoom-label">{Math.round(zoom * 100)}%</span>
           <button onClick={() => viewRef.current?.zoomIn()} title="Aumentar zoom (+)" aria-label="Aumentar zoom">+</button>
           <button onClick={() => viewRef.current?.fitToMap()} title="Enquadrar mapa (0)">Enquadrar</button>
+          <span className="sep" />
+          <button onClick={openPlayerWindow} title="Abre uma janela só com o mapa e a névoa opaca, para mostrar aos jogadores">
+            Janela dos jogadores
+          </button>
           <label className="toggle">
             <input type="checkbox" checked={state.showGrid} onChange={(e) => editor.setShowGrid(e.target.checked)} />
             Grid
@@ -76,6 +167,11 @@ export function App() {
         </span>
         <span className="hint">Botão direito ou Espaço + arrastar move o mapa · roda do mouse dá zoom</span>
       </footer>
+      {notice && (
+        <div className={`notice${notice.error ? ' error' : ''}`} role={notice.error ? 'alert' : 'status'} data-testid="notice">
+          {notice.text}
+        </div>
+      )}
       {newMapOpen && (
         <NewMapDialog
           onCancel={() => setNewMapOpen(false)}

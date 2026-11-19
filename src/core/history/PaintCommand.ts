@@ -26,6 +26,9 @@ export class PaintCommand implements Command {
 
   get size() { return this.changes.size; }
 
+  /** Avisa quem desenha a camada sobre as células pintadas até agora. */
+  flush() { this.layer.flush(); }
+
   isEmpty() {
     for (const [before, after] of this.changes.values()) if (before !== after) return false;
     return true;

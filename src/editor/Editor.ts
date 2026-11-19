@@ -1,5 +1,5 @@
 import { ItemsCommand, newId } from '../core/doc/ItemLayer';
-import { MapDocument, type NewMapOptions } from '../core/doc/MapDocument';
+import { FOG_CLEAR, FOG_HIDDEN, MapDocument, type NewMapOptions } from '../core/doc/MapDocument';
 import { hitObject, hitToken, OBJECT_ASSETS, TOKEN_COLORS, type MapObject, type Token } from '../core/doc/objects';
 import { EMPTY, TERRAINS } from '../core/doc/terrain';
 import {
@@ -11,8 +11,9 @@ import { PaintCommand } from '../core/history/PaintCommand';
 import { floodFill } from '../core/tools/floodFill';
 import { strokeCells } from '../core/tools/strokeCells';
 
-export type ToolId = 'pan' | 'select' | 'brush' | 'eraser' | 'bucket' | 'wall' | 'door' | 'object' | 'token';
-export type LayerId = 'terrain' | 'walls' | 'objects' | 'tokens';
+export type ToolId = 'pan' | 'select' | 'brush' | 'eraser' | 'bucket' | 'wall' | 'door' | 'object' | 'token' | 'fog';
+export type LayerId = 'terrain' | 'walls' | 'objects' | 'tokens' | 'fog';
+export type FogMode = 'reveal' | 'hide';
 
 export const TOOLS: { id: ToolId; name: string; key: string; layer: LayerId | null }[] = [
   { id: 'pan', name: 'Mover mapa', key: 'h', layer: null },
@@ -24,9 +25,11 @@ export const TOOLS: { id: ToolId; name: string; key: string; layer: LayerId | nu
   { id: 'door', name: 'Porta', key: 'd', layer: 'walls' },
   { id: 'object', name: 'Objeto', key: 'o', layer: 'objects' },
   { id: 'token', name: 'Token', key: 't', layer: 'tokens' },
+  { id: 'fog', name: 'Névoa', key: 'n', layer: 'fog' },
 ];
 
 export const LAYERS: { id: LayerId; name: string }[] = [
+  { id: 'fog', name: 'Névoa de guerra' },
   { id: 'tokens', name: 'Tokens' },
   { id: 'objects', name: 'Objetos' },
   { id: 'walls', name: 'Paredes e portas' },
@@ -55,6 +58,7 @@ export interface EditorState {
   showGrid: boolean;
   objectAsset: string;
   tokenColor: string;
+  fogMode: FogMode;
   selection: Selection;
   layers: Record<LayerId, LayerState>;
   canUndo: boolean;
@@ -85,7 +89,7 @@ export class Editor {
   readonly history = new History();
   private state: EditorState;
   private listeners = new Set<() => void>();
-  private stroke: { cmd: PaintCommand; last: Point } | null = null;
+  private stroke: { cmd: PaintCommand; last: Point; value: number } | null = null;
   private wallDrag: { start: Point; end: Point; rect: boolean } | null = null;
   private moveDrag: { layer: 'objects' | 'tokens'; id: string; dx: number; dy: number; before: MapObject | Token; moved: boolean } | null = null;
   private hoverPoint: Point | null = null;
@@ -102,12 +106,14 @@ export class Editor {
       showGrid: true,
       objectAsset: OBJECT_ASSETS[0].key,
       tokenColor: TOKEN_COLORS[0],
+      fogMode: 'hide',
       selection: null,
       layers: {
         terrain: { visible: true, locked: false },
         walls: { visible: true, locked: false },
         objects: { visible: true, locked: false },
         tokens: { visible: true, locked: false },
+        fog: { visible: true, locked: false },
       },
       canUndo: false,
       canRedo: false,
@@ -171,12 +177,29 @@ export class Editor {
     this.set({ brushSize: Math.min(MAX_BRUSH, Math.max(MIN_BRUSH, Math.round(size))) });
   }
   setShowGrid(showGrid: boolean) { this.set({ showGrid }); }
+  setFogMode(fogMode: FogMode) { this.set({ fogMode, tool: 'fog' }); }
+
+  /** Cobre (ou revela) o mapa inteiro de uma vez, como um passo do histórico. */
+  fogAll(hidden: boolean) {
+    this.endGestures();
+    const { fog } = this.doc;
+    const value = hidden ? FOG_HIDDEN : FOG_CLEAR;
+    const cmd = new PaintCommand(fog, hidden ? 'Cobrir tudo' : 'Revelar tudo');
+    for (let row = 0; row < fog.rows; row++) for (let col = 0; col < fog.cols; col++) cmd.paint(col, row, value);
+    fog.flush();
+    this.history.push(cmd);
+  }
   undo() { this.endGestures(); this.history.undo(); }
   redo() { this.endGestures(); this.history.redo(); }
 
   newMap(options: NewMapOptions) {
+    this.loadDocument(new MapDocument(options));
+  }
+
+  /** Troca o documento (mapa novo, arquivo aberto, salvamento automático). */
+  loadDocument(doc: MapDocument) {
     this.endGestures();
-    this.doc = new MapDocument(options);
+    this.doc = doc;
     this.history.clear();
     this.set({ docVersion: this.state.docVersion + 1, selection: null });
   }
@@ -186,13 +209,14 @@ export class Editor {
 
   /** Raio do pincel em células, para a ferramenta atual. */
   get brushRadius() {
-    return this.state.tool === 'brush' || this.state.tool === 'eraser' ? this.state.brushSize - 1 : 0;
+    const t = this.state.tool;
+    return t === 'brush' || t === 'eraser' || t === 'fog' ? this.state.brushSize - 1 : 0;
   }
 
   /** Células que a ferramenta afetaria se o usuário clicasse aqui (para a prévia). */
   previewCells(cell: Cell): Cell[] {
     const t = this.state.tool;
-    if ((t !== 'brush' && t !== 'eraser' && t !== 'bucket') || !this.toolLayerEditable) return [];
+    if ((t !== 'brush' && t !== 'eraser' && t !== 'bucket' && t !== 'fog') || !this.toolLayerEditable) return [];
     return this.doc.grid.cellsInRadius(cell, this.brushRadius);
   }
 
@@ -223,9 +247,17 @@ export class Editor {
       this.history.push(cmd);
       return;
     }
+    if (tool === 'fog') {
+      // Alt inverte o modo durante o traço.
+      const hide = (this.state.fogMode === 'hide') !== !!mods.alt;
+      const cmd = new PaintCommand(this.doc.fog, hide ? 'Cobrir com névoa' : 'Revelar névoa');
+      this.stroke = { cmd, last: p, value: hide ? FOG_HIDDEN : FOG_CLEAR };
+      this.paintSegment(p, p);
+      return;
+    }
     if (tool === 'brush' || tool === 'eraser') {
       const cmd = new PaintCommand(this.doc.terrain, tool === 'brush' ? 'Pincel' : 'Borracha');
-      this.stroke = { cmd, last: p };
+      this.stroke = { cmd, last: p, value: tool === 'eraser' ? EMPTY : this.state.terrain };
       this.paintSegment(p, p);
     }
   }
@@ -463,10 +495,10 @@ export class Editor {
   }
 
   private paintSegment(a: Point, b: Point) {
-    if (!this.stroke) return;
-    const value = this.state.tool === 'eraser' ? EMPTY : this.state.terrain;
-    for (const c of strokeCells(this.doc.grid, a, b, this.brushRadius)) this.stroke.cmd.paint(c.col, c.row, value);
-    this.doc.terrain.flush();
+    const s = this.stroke;
+    if (!s) return;
+    for (const c of strokeCells(this.doc.grid, a, b, this.brushRadius)) s.cmd.paint(c.col, c.row, s.value);
+    s.cmd.flush();
   }
 
 }
