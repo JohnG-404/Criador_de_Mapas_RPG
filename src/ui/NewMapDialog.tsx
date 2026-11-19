@@ -35,7 +35,7 @@ export function NewMapDialog({ onCreate, onCancel }: { onCreate: (o: NewMapOptio
         }}
       >
         <h2 id="new-map-title">Novo mapa</h2>
-        <p className="warn">O mapa atual será substituído (ainda não há salvamento; isso chega na fase 3).</p>
+        <p className="warn">O mapa atual será substituído. Use Salvar antes se quiser guardá-lo.</p>
         <label>
           Nome
           <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />

@@ -140,3 +140,16 @@ html, body, #root { margin: 0; height: 100%; }
 .player-wait {
   position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 15px; pointer-events: none; padding: 16px; text-align: center;
 }
+.gen-kinds { display: flex; flex-direction: column; gap: 6px; }
+.dialog label.gen-kind {
+  display: grid; grid-template-columns: auto 1fr; column-gap: 8px; row-gap: 2px; align-items: center;
+  padding: 8px 10px; border: 1px solid var(--panel-border); border-radius: 8px; cursor: pointer; color: var(--text);
+}
+.dialog label.gen-kind input { grid-row: span 2; width: auto; }
+.dialog label.gen-kind span { font-size: 12px; color: var(--muted); }
+.dialog label.gen-kind.active { border-color: var(--accent); background: #3a3426; }
+.dialog label.gen-kind.disabled { opacity: .5; cursor: default; }
+.seed-row { display: flex; gap: 6px; }
+.seed-row input { flex: 1; }
+.seed-row button { font: inherit; padding: 6px 12px; border-radius: 6px; cursor: pointer; background: #2e3340; color: var(--text); border: 1px solid var(--panel-border); }
+.dialog small { font-size: 11px; color: var(--muted); }
