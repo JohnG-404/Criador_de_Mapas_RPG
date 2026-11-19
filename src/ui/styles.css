@@ -34,3 +34,65 @@ html, body, #root { margin: 0; height: 100%; }
   font-variant-numeric: tabular-nums;
 }
 @media (max-width: 700px) { .hint { display: none; } }
+
+/* ---- fase 1: painel de ferramentas e diálogo */
+.app { grid-template-rows: auto 1fr auto; }
+.workspace { display: grid; grid-template-columns: 210px 1fr; min-height: 0; }
+.panel {
+  background: var(--panel); border-right: 1px solid var(--panel-border); overflow-y: auto;
+  padding: 12px; display: flex; flex-direction: column; gap: 18px;
+}
+.panel h2 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  margin: 0 0 8px; display: flex; justify-content: space-between; font-weight: 600;
+}
+.panel h2 output { color: var(--text); font-size: 13px; }
+.tools { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tools button, .terrains button {
+  display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer;
+  background: #2b303c; color: var(--text); border: 1px solid var(--panel-border); font: inherit; font-size: 13px; text-align: left;
+}
+.tools button:hover, .terrains button:hover { border-color: #5a6274; }
+.tools button.active, .terrains button.active { border-color: var(--accent); background: #3a3426; }
+.tools button:focus-visible, .terrains button:focus-visible, .panel input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.terrains { display: flex; flex-direction: column; gap: 6px; }
+.swatch { width: 30px; height: 30px; border-radius: 6px; background-size: 60px; flex: none; box-shadow: inset 0 0 0 1px #0006; }
+.terrains kbd { margin-left: auto; font-size: 11px; color: var(--muted); font-family: inherit; }
+.panel input[type=range] { width: 100%; accent-color: var(--accent); }
+.panel .help { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
+.panel .dimmed { opacity: .45; }
+.toolbar button:disabled { opacity: .4; cursor: default; border-color: var(--panel-border); }
+.sep { width: 1px; height: 20px; background: var(--panel-border); margin: 0 4px; }
+
+.dialog {
+  background: var(--panel); color: var(--text); border: 1px solid var(--panel-border); border-radius: 12px;
+  padding: 20px 22px; width: min(420px, calc(100vw - 32px));
+}
+.dialog::backdrop { background: #0009; }
+.dialog h2 { margin: 0 0 6px; font-size: 18px; }
+.dialog form { display: flex; flex-direction: column; gap: 12px; }
+.dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.dialog input, .dialog select {
+  font: inherit; color: var(--text); background: #1e222b; border: 1px solid var(--panel-border); border-radius: 6px; padding: 7px 9px;
+}
+.dialog fieldset { border: 1px solid var(--panel-border); border-radius: 8px; display: flex; gap: 18px; padding: 8px 12px; }
+.dialog legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
+.dialog label.radio { flex-direction: row; align-items: center; color: var(--text); gap: 6px; }
+.dialog .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dialog .warn { margin: 0; font-size: 12px; color: #d6b46a; }
+.dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.dialog .actions button {
+  font: inherit; padding: 8px 14px; border-radius: 8px; cursor: pointer; background: #2e3340; color: var(--text); border: 1px solid var(--panel-border);
+}
+.dialog .actions .primary { background: var(--accent); color: #1b1e26; border-color: var(--accent); font-weight: 600; }
+.dialog .actions .primary:disabled { opacity: .5; }
+
+@media (max-width: 760px) {
+  .workspace { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .panel { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--panel-border); padding: 8px 12px; gap: 14px; }
+  .panel section { flex: none; }
+  .terrains { flex-direction: row; }
+  .terrains button span:not(.swatch), .terrains kbd, .tools button span, .panel .help { display: none; }
+  .tools { grid-template-columns: repeat(4, auto); }
+  .panel input[type=range] { width: 110px; }
+}
