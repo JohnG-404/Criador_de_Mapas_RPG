@@ -1,38 +1,43 @@
-import { Assets, Container, FillPattern, Graphics, Matrix, type Texture } from 'pixi.js';
+import { Assets, BufferImageSource, Container, Geometry, Mesh, Shader, Texture } from 'pixi.js';
 import type { MapDocument } from '../core/doc/MapDocument';
 import { TERRAINS } from '../core/doc/terrain';
-import { chunkKey, type ChunkKey } from '../core/doc/TerrainLayer';
-import type { Point } from '../core/grid/GridSystem';
+import { CHUNK_SIZE, chunkKey, type ChunkKey, type DirtyCells } from '../core/doc/TerrainLayer';
+import { buildChunkMask, MASK_BLUR, MASK_MARGIN_CELLS } from './terrainMask';
+import { TERRAIN_FRAGMENT, TERRAIN_VERTEX } from './terrainShader';
 import { TERRAIN_TEXTURE_URLS, TEXTURE_CELLS } from './terrainTextures';
 
-/** Sobreposição (px do mundo) entre células vizinhas, para não aparecer fresta. */
-const OVERLAP = 0.35;
+interface ChunkView {
+  mesh: Mesh<Geometry, Shader>;
+  source: BufferImageSource;
+  data: Uint8Array;
+}
 
 /**
- * Desenha a camada de terreno. Cada chunk de 32×32 células vira um Graphics
- * com as texturas aplicadas em coordenadas do mundo (a textura continua de
- * uma célula para a outra, sem emenda). Só os chunks alterados são refeitos.
+ * Desenha a camada de terreno com transição suave entre terrenos.
+ * Cada chunk de 32×32 células é um quad com um shader que mistura as texturas
+ * conforme uma máscara de baixa resolução (ver terrainMask.ts). Quando o
+ * usuário pinta, só as máscaras dos chunks próximos são refeitas, uma vez
+ * por quadro.
  */
 export class TerrainRenderer {
   readonly container = new Container();
-  private chunks = new Map<ChunkKey, Graphics>();
-  private patterns = new Map<number, FillPattern>();
+  private chunks = new Map<ChunkKey, ChunkView>();
+  private textures: Texture[] = [];
+  private pending = new Set<ChunkKey>();
   private unsubscribe: (() => void) | null = null;
   onChange: (() => void) | null = null;
 
   constructor(private doc: MapDocument) {}
 
   async load() {
-    const scale = (TEXTURE_CELLS * this.doc.grid.cellSize);
-    await Promise.all(
+    this.textures = await Promise.all(
       TERRAINS.map(async (t) => {
-        const url = TERRAIN_TEXTURE_URLS[t.key];
-        if (!url) return;
-        const tex = await Assets.load<Texture>(url);
+        const tex = await Assets.load<Texture>(TERRAIN_TEXTURE_URLS[t.key]);
+        tex.source.addressMode = 'repeat';
         tex.source.scaleMode = 'linear';
-        const pattern = new FillPattern(tex, 'repeat');
-        pattern.setTransform(new Matrix().scale(scale / tex.width, scale / tex.height));
-        this.patterns.set(t.id, pattern);
+        tex.source.autoGenerateMipmaps = true;
+        tex.source.updateMipmaps();
+        return tex;
       }),
     );
   }
@@ -40,75 +45,87 @@ export class TerrainRenderer {
   buildAll() {
     const t = this.doc.terrain;
     for (let cy = 0; cy < t.chunksY; cy++) for (let cx = 0; cx < t.chunksX; cx++) this.buildChunk(cx, cy);
-    this.unsubscribe = t.onChange((dirty) => {
-      for (const key of dirty) {
-        const [cx, cy] = key.split(',').map(Number);
-        this.buildChunk(cx, cy);
-      }
-      this.onChange?.();
-    });
+    this.unsubscribe = t.onChange((_chunks, cells) => this.markDirty(cells));
+  }
+
+  /** Refaz as máscaras pendentes. Chamado pela visualização antes de desenhar. */
+  update(): boolean {
+    if (!this.pending.size) return false;
+    for (const key of this.pending) {
+      const [cx, cy] = key.split(',').map(Number);
+      this.buildChunk(cx, cy);
+    }
+    this.pending.clear();
+    return true;
   }
 
   destroy() {
     this.unsubscribe?.();
+    for (const c of this.chunks.values()) {
+      c.mesh.shader?.destroy();
+      c.source.destroy();
+    }
     this.container.destroy({ children: true });
+  }
+
+  /** Marca os chunks cuja máscara inclui as células alteradas (contando a margem e o desfoque). */
+  private markDirty(cells: DirtyCells) {
+    const reach = MASK_MARGIN_CELLS + Math.ceil(MASK_BLUR / 2) + 1;
+    const t = this.doc.terrain;
+    const cx0 = Math.max(0, Math.floor((cells.minCol - reach) / CHUNK_SIZE));
+    const cx1 = Math.min(t.chunksX - 1, Math.floor((cells.maxCol + reach) / CHUNK_SIZE));
+    const cy0 = Math.max(0, Math.floor((cells.minRow - reach) / CHUNK_SIZE));
+    const cy1 = Math.min(t.chunksY - 1, Math.floor((cells.maxRow + reach) / CHUNK_SIZE));
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) this.pending.add(chunkKey(cx, cy));
+    this.onChange?.();
   }
 
   private buildChunk(cx: number, cy: number) {
     const key = chunkKey(cx, cy);
-    let g = this.chunks.get(key);
-    if (!g) {
-      g = new Graphics();
-      this.chunks.set(key, g);
-      this.container.addChild(g);
+    const existing = this.chunks.get(key);
+    const mask = buildChunkMask(this.doc.grid, this.doc.terrain, cx, cy, existing?.data);
+    if (existing) {
+      existing.source.resource = mask.data;
+      existing.source.update();
+      return;
     }
-    g.clear();
-    const { minCol, maxCol, minRow, maxRow } = this.doc.terrain.chunkBounds(cx, cy);
-    const grid = this.doc.grid;
-    const layer = this.doc.terrain;
-
-    for (const t of TERRAINS) {
-      let any = false;
-      if (grid.kind === 'square') {
-        // Junta células iguais seguidas na mesma linha num retângulo só.
-        const s = grid.cellSize;
-        for (let row = minRow; row <= maxRow; row++) {
-          let start = -1;
-          for (let col = minCol; col <= maxCol + 1; col++) {
-            const match = col <= maxCol && layer.get(col, row) === t.id;
-            if (match && start < 0) start = col;
-            if (!match && start >= 0) {
-              g.rect(start * s - OVERLAP, row * s - OVERLAP, (col - start) * s + OVERLAP * 2, s + OVERLAP * 2);
-              start = -1;
-              any = true;
-            }
-          }
-        }
-      } else {
-        for (let row = minRow; row <= maxRow; row++) {
-          for (let col = minCol; col <= maxCol; col++) {
-            if (layer.get(col, row) !== t.id) continue;
-            const c = grid.cellToWorld({ col, row });
-            g.poly(expand(grid.cellPolygon({ col, row }), c, OVERLAP));
-            any = true;
-          }
-        }
-      }
-      if (!any) continue;
-      const pattern = this.patterns.get(t.id);
-      if (pattern) g.fill({ fill: pattern });
-      else g.fill(t.color);
-    }
+    const source = new BufferImageSource({
+      resource: mask.data,
+      width: mask.width,
+      height: mask.height,
+      format: 'rgba8unorm',
+      alphaMode: 'no-premultiply-alpha',
+      scaleMode: 'linear',
+    });
+    const { quad, maskRect } = mask;
+    const u0 = (quad.x - maskRect.x) / maskRect.width;
+    const v0 = (quad.y - maskRect.y) / maskRect.height;
+    const u1 = (quad.x + quad.width - maskRect.x) / maskRect.width;
+    const v1 = (quad.y + quad.height - maskRect.y) / maskRect.height;
+    const geometry = new Geometry({
+      attributes: {
+        aPosition: [quad.x, quad.y, quad.x + quad.width, quad.y, quad.x + quad.width, quad.y + quad.height, quad.x, quad.y + quad.height],
+        aUV: [u0, v0, u1, v0, u1, v1, u0, v1],
+      },
+      indexBuffer: [0, 1, 2, 0, 2, 3],
+    });
+    const cell = this.doc.grid.cellSize;
+    const shader = Shader.from({
+      gl: { vertex: TERRAIN_VERTEX, fragment: TERRAIN_FRAGMENT, name: 'terrain-blend' },
+      resources: {
+        uMask: source,
+        uTex1: this.textures[0].source,
+        uTex2: this.textures[1].source,
+        uTex3: this.textures[2].source,
+        uTex4: this.textures[3].source,
+        terrainUniforms: {
+          uTexScale: { value: TEXTURE_CELLS * cell, type: 'f32' },
+          uCell: { value: cell, type: 'f32' },
+        },
+      },
+    });
+    const mesh = new Mesh({ geometry, shader });
+    this.container.addChild(mesh);
+    this.chunks.set(key, { mesh, source, data: mask.data });
   }
-}
-
-function expand(pts: Point[], c: Point, by: number): number[] {
-  const out: number[] = [];
-  for (const p of pts) {
-    const dx = p.x - c.x;
-    const dy = p.y - c.y;
-    const len = Math.hypot(dx, dy) || 1;
-    out.push(p.x + (dx / len) * by, p.y + (dy / len) * by);
-  }
-  return out;
 }

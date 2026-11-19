@@ -59,6 +59,8 @@ export class MapView {
 
   async mount(host: HTMLElement) {
     await this.app.init({
+      // O shader de terreno é GLSL; WebGL roda em todos os navegadores atuais.
+      preference: 'webgl',
       background: theme.background,
       resizeTo: host,
       antialias: true,
@@ -165,6 +167,7 @@ export class MapView {
       this.camera.clampTo(this.doc.grid.worldBounds());
       this.dirty = true;
     }
+    if (this.terrain?.update()) this.dirty = true;
     if (!this.dirty) return;
     this.dirty = false;
 
