@@ -35,3 +35,16 @@ describe('SquareGrid', () => {
     expect(() => new SquareGrid(10, 10, 0)).toThrow();
   });
 });
+
+describe('SquareGrid: vizinhos e pincel', () => {
+  const grid = new SquareGrid(10, 10, 32);
+  it('4 vizinhos no meio, 2 no canto', () => {
+    expect(grid.neighbors({ col: 5, row: 5 })).toHaveLength(4);
+    expect(grid.neighbors({ col: 0, row: 0 })).toHaveLength(2);
+  });
+  it('pincel: raio 0 = 1 célula, raio 1 = cruz de 5, recorta na borda', () => {
+    expect(grid.cellsInRadius({ col: 5, row: 5 }, 0)).toHaveLength(1);
+    expect(grid.cellsInRadius({ col: 5, row: 5 }, 1)).toHaveLength(5);
+    expect(grid.cellsInRadius({ col: 0, row: 0 }, 1)).toHaveLength(3);
+  });
+});

@@ -16,15 +16,27 @@ npm run test:e2e   # testes no navegador (Playwright)
 npm run build      # gera a versão final em dist/
 ```
 
-Controles da fase 0: arraste para mover, roda do mouse (ou pinça no trackpad) para zoom, `+`/`-` para zoom, `0` para enquadrar o mapa e setas para mover.
+### Controles
+
+| Ação | Como |
+|---|---|
+| Pintar | Botão esquerdo com Pincel (B), Borracha (E) ou Balde (G) |
+| Escolher terreno | Painel à esquerda ou teclas 1 a 4 |
+| Tamanho do pincel | Controle deslizante ou `[` e `]` |
+| Desfazer / refazer | Ctrl+Z / Ctrl+Shift+Z (ou Ctrl+Y) |
+| Mover o mapa | Botão direito ou do meio, Espaço + arrastar, ferramenta Mover (H) ou setas |
+| Zoom | Roda do mouse, pinça no trackpad, `+` e `-`; `0` enquadra o mapa |
 
 ## Estrutura
 
 ```
-src/core/     modelo e lógica pura (grid, câmera), sem dependência de renderização
+src/core/     modelo e lógica pura (grid quadrado e hex, câmera, documento em chunks,
+              histórico de desfazer, pincel e balde), sem dependência de renderização
+src/editor/   controlador do editor: estado, ferramentas e gestos
 src/render/   desenho do mapa com PixiJS
 src/ui/       interface em React
 e2e/          testes no navegador
+assets/       texturas e objetos (estilo escolhido: realista diurno)
 docs/         planejamento e propostas de estilo
 tools/        scripts auxiliares (ex.: gerar as propostas de estilo)
 ```

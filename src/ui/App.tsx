@@ -1,34 +1,36 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { TERRAINS } from '../core/doc/terrain';
 import type { Cell } from '../core/grid/GridSystem';
-import { SquareGrid } from '../core/grid/SquareGrid';
+import { Editor } from '../editor/Editor';
 import { MapView } from '../render/MapView';
-
-const MAP_COLS = 200;
-const MAP_ROWS = 200;
-const CELL_PX = 32;
-const CELL_METERS = 1.5;
+import { NewMapDialog } from './NewMapDialog';
+import { ToolPanel } from './ToolPanel';
+import { useShortcuts } from './useShortcuts';
 
 export function App() {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<MapView | null>(null);
-  const grid = useMemo(() => new SquareGrid(MAP_COLS, MAP_ROWS, CELL_PX), []);
+  const [editor] = useState(() => new Editor());
+  const state = useSyncExternalStore(editor.subscribe, editor.getState);
   const [hover, setHover] = useState<Cell | null>(null);
   const [zoom, setZoom] = useState(1);
-  const [showGrid, setShowGrid] = useState(true);
+  const [newMapOpen, setNewMapOpen] = useState(false);
 
   useEffect(() => {
-    const view = new MapView(grid, { showGrid: true }, { onHoverCell: setHover, onZoomChange: setZoom });
+    const view = new MapView(editor, { onHoverCell: setHover, onZoomChange: setZoom });
     viewRef.current = view;
     void view.mount(hostRef.current!);
     return () => {
       view.destroy();
       viewRef.current = null;
     };
-  }, [grid]);
+  }, [editor]);
 
-  useEffect(() => {
-    viewRef.current?.setOptions({ showGrid });
-  }, [showGrid]);
+  useShortcuts(editor, !newMapOpen);
+
+  const doc = editor.doc;
+  const opts = doc.options;
+  const hoverTerrain = hover ? TERRAINS.find((t) => t.id === doc.terrain.getCell(hover))?.name ?? 'Vazio' : null;
 
   return (
     <div className="app">
@@ -36,7 +38,13 @@ export function App() {
         <div className="brand">
           <img src="./favicon.svg" alt="" width={22} height={22} />
           <span>Atlas Board</span>
-          <span className="tag">fase 0</span>
+          <span className="tag">fase 1</span>
+        </div>
+        <div className="toolbar" role="toolbar" aria-label="Arquivo e histórico">
+          <button onClick={() => setNewMapOpen(true)}>Novo mapa</button>
+          <span className="sep" />
+          <button onClick={() => editor.undo()} disabled={!state.canUndo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer">↶</button>
+          <button onClick={() => editor.redo()} disabled={!state.canRedo} title="Refazer (Ctrl+Shift+Z)" aria-label="Refazer">↷</button>
         </div>
         <div className="toolbar" role="toolbar" aria-label="Visualização">
           <button onClick={() => viewRef.current?.zoomOut()} title="Diminuir zoom (−)" aria-label="Diminuir zoom">−</button>
@@ -44,19 +52,34 @@ export function App() {
           <button onClick={() => viewRef.current?.zoomIn()} title="Aumentar zoom (+)" aria-label="Aumentar zoom">+</button>
           <button onClick={() => viewRef.current?.fitToMap()} title="Enquadrar mapa (0)">Enquadrar</button>
           <label className="toggle">
-            <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} />
+            <input type="checkbox" checked={state.showGrid} onChange={(e) => editor.setShowGrid(e.target.checked)} />
             Grid
           </label>
         </div>
       </header>
-      <main className="stage" ref={hostRef} />
+      <div className="workspace">
+        <ToolPanel editor={editor} state={state} />
+        <main className="stage" ref={hostRef} />
+      </div>
       <footer className="statusbar">
-        <span>Mapa {MAP_COLS}×{MAP_ROWS} · grid quadrado · 1 célula = {CELL_METERS.toLocaleString('pt-BR')} m</span>
-        <span data-testid="hover-cell">
-          {hover ? `Célula ${hover.col + 1}, ${hover.row + 1}` : 'Passe o mouse sobre o mapa'}
+        <span data-testid="map-info">
+          {opts.name} · {opts.cols}×{opts.rows} · grid {opts.gridKind === 'hex' ? 'hexagonal' : 'quadrado'} · 1 célula ={' '}
+          {opts.cellMeters.toLocaleString('pt-BR')} m
         </span>
-        <span className="hint">Arraste para mover · roda do mouse para zoom · 0 enquadra</span>
+        <span data-testid="hover-cell">
+          {hover ? `Célula ${hover.col + 1}, ${hover.row + 1} · ${hoverTerrain}` : 'Passe o mouse sobre o mapa'}
+        </span>
+        <span className="hint">Botão direito ou Espaço + arrastar move o mapa · roda do mouse dá zoom</span>
       </footer>
+      {newMapOpen && (
+        <NewMapDialog
+          onCancel={() => setNewMapOpen(false)}
+          onCreate={(o) => {
+            editor.newMap(o);
+            setNewMapOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

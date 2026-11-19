@@ -1,4 +1,4 @@
-import type { Cell, GridSystem, Point, Rect } from './GridSystem';
+import { inBounds, type Cell, type GridSystem, type Point, type Rect } from './GridSystem';
 
 export class SquareGrid implements GridSystem {
   readonly kind = 'square' as const;
@@ -49,5 +49,33 @@ export class SquareGrid implements GridSystem {
       { x: x + s, y: y + s },
       { x, y: y + s },
     ];
+  }
+
+  neighbors({ col, row }: Cell): Cell[] {
+    return [
+      { col: col + 1, row },
+      { col: col - 1, row },
+      { col, row: row + 1 },
+      { col, row: row - 1 },
+    ].filter((c) => inBounds(this, c));
+  }
+
+  distance(a: Cell, b: Cell): number {
+    return Math.hypot(a.col - b.col, a.row - b.row);
+  }
+
+  /** Pincel redondo: centro das células dentro do círculo. */
+  cellsInRadius(center: Cell, radius: number): Cell[] {
+    const out: Cell[] = [];
+    const r = Math.max(0, Math.floor(radius));
+    const limit = (r + 0.35) ** 2;
+    for (let dr = -r; dr <= r; dr++) {
+      for (let dc = -r; dc <= r; dc++) {
+        if (dc * dc + dr * dr > limit) continue;
+        const c = { col: center.col + dc, row: center.row + dr };
+        if (inBounds(this, c)) out.push(c);
+      }
+    }
+    return out;
   }
 }
