@@ -11,6 +11,16 @@ async function terrainAt(page: Page, x: number, y: number) {
   return (await page.getByTestId('hover-cell').textContent())!.split('·').pop()!.trim();
 }
 
+/** Ponto do mundo (pixels do mapa) em coordenadas da página. */
+async function mapPoint(page: Page, x: number, y: number) {
+  const box = await canvasBox(page);
+  const s = await page.evaluate((w) => {
+    const atlas = (window as unknown as { atlas: { view: { camera: { worldToScreen(p: { x: number; y: number }): { x: number; y: number } } } } }).atlas;
+    return atlas.view.camera.worldToScreen(w);
+  }, { x, y });
+  return { x: box.x + s.x, y: box.y + s.y };
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
 });
@@ -73,8 +83,10 @@ test('borracha deixa vazio e balde preenche', async ({ page }) => {
   expect(await terrainAt(page, x, y)).toBe('Vazio');
   await page.keyboard.press('g');
   await page.keyboard.press('4');
-  await page.mouse.click(box.x + 30, box.y + 30);
-  expect(await terrainAt(page, box.x + box.width - 30, box.y + box.height - 30)).toBe('Piso de pedra');
+  const a = await mapPoint(page, 30, 30);
+  const b = await mapPoint(page, 1920 - 30, 1280 - 30);
+  await page.mouse.click(a.x, a.y);
+  expect(await terrainAt(page, b.x, b.y)).toBe('Piso de pedra');
   expect(await terrainAt(page, x, y)).toBe('Vazio');
 });
 

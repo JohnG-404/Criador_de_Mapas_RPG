@@ -19,6 +19,8 @@ export function App() {
   useEffect(() => {
     const view = new MapView(editor, { onHoverCell: setHover, onZoomChange: setZoom });
     viewRef.current = view;
+    // Acesso pelo console do navegador (e pelos testes de ponta a ponta).
+    (window as unknown as { atlas?: unknown }).atlas = { editor, view };
     void view.mount(hostRef.current!);
     return () => {
       view.destroy();
@@ -38,7 +40,7 @@ export function App() {
         <div className="brand">
           <img src="./favicon.svg" alt="" width={22} height={22} />
           <span>Atlas Board</span>
-          <span className="tag">fase 1</span>
+          <span className="tag">fase 2</span>
         </div>
         <div className="toolbar" role="toolbar" aria-label="Arquivo e histórico">
           <button onClick={() => setNewMapOpen(true)}>Novo mapa</button>
@@ -66,6 +68,9 @@ export function App() {
           {opts.name} · {opts.cols}×{opts.rows} · grid {opts.gridKind === 'hex' ? 'hexagonal' : 'quadrado'} · 1 célula ={' '}
           {opts.cellMeters.toLocaleString('pt-BR')} m
         </span>
+        <span data-testid="content-counts">
+          {plural(doc.walls.size, 'parede', 'paredes')} · {plural(doc.objects.size, 'objeto', 'objetos')} · {plural(doc.tokens.size, 'token', 'tokens')}
+        </span>
         <span data-testid="hover-cell">
           {hover ? `Célula ${hover.col + 1}, ${hover.row + 1} · ${hoverTerrain}` : 'Passe o mouse sobre o mapa'}
         </span>
@@ -82,4 +87,8 @@ export function App() {
       )}
     </div>
   );
+}
+
+function plural(n: number, one: string, many: string) {
+  return `${n} ${n === 1 ? one : many}`;
 }

@@ -4,6 +4,14 @@ export const CHUNK_SIZE = 32;
 
 export type ChunkKey = string;
 
+/** Retângulo de células alteradas (inclusivo). */
+export interface DirtyCells {
+  minCol: number;
+  maxCol: number;
+  minRow: number;
+  maxRow: number;
+}
+
 export function chunkKey(cx: number, cy: number): ChunkKey {
   return `${cx},${cy}`;
 }
@@ -16,9 +24,11 @@ export function chunkKey(cx: number, cy: number): ChunkKey {
 export class TerrainLayer {
   readonly chunksX: number;
   readonly chunksY: number;
-  private chunks = new Map<ChunkKey, Uint8Array>();
+  /** Chunks por índice (cy * chunksX + cx); undefined = ainda só o terreno inicial. */
+  private chunks: (Uint8Array | undefined)[];
   private dirty = new Set<ChunkKey>();
-  private listeners = new Set<(dirty: ReadonlySet<ChunkKey>) => void>();
+  private dirtyCells: DirtyCells | null = null;
+  private listeners = new Set<(dirty: ReadonlySet<ChunkKey>, cells: DirtyCells) => void>();
 
   constructor(
     readonly cols: number,
@@ -27,11 +37,12 @@ export class TerrainLayer {
   ) {
     this.chunksX = Math.ceil(cols / CHUNK_SIZE);
     this.chunksY = Math.ceil(rows / CHUNK_SIZE);
+    this.chunks = new Array(this.chunksX * this.chunksY);
   }
 
   get(col: number, row: number): number {
     if (!this.contains(col, row)) return 0;
-    const chunk = this.chunks.get(chunkKey(Math.floor(col / CHUNK_SIZE), Math.floor(row / CHUNK_SIZE)));
+    const chunk = this.chunks[((row / CHUNK_SIZE) | 0) * this.chunksX + ((col / CHUNK_SIZE) | 0)];
     if (!chunk) return this.fill;
     return chunk[(row % CHUNK_SIZE) * CHUNK_SIZE + (col % CHUNK_SIZE)];
   }
@@ -41,17 +52,25 @@ export class TerrainLayer {
     if (!this.contains(col, row)) return 0;
     const cx = Math.floor(col / CHUNK_SIZE);
     const cy = Math.floor(row / CHUNK_SIZE);
-    const key = chunkKey(cx, cy);
-    let chunk = this.chunks.get(key);
+    const ci = cy * this.chunksX + cx;
+    let chunk = this.chunks[ci];
     if (!chunk) {
       chunk = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE).fill(this.fill);
-      this.chunks.set(key, chunk);
+      this.chunks[ci] = chunk;
     }
     const i = (row % CHUNK_SIZE) * CHUNK_SIZE + (col % CHUNK_SIZE);
     const prev = chunk[i];
     if (prev !== value) {
       chunk[i] = value;
-      this.dirty.add(key);
+      this.dirty.add(chunkKey(cx, cy));
+      const d = this.dirtyCells;
+      if (!d) this.dirtyCells = { minCol: col, maxCol: col, minRow: row, maxRow: row };
+      else {
+        if (col < d.minCol) d.minCol = col;
+        if (col > d.maxCol) d.maxCol = col;
+        if (row < d.minRow) d.minRow = row;
+        if (row > d.maxRow) d.maxRow = row;
+      }
     }
     return prev;
   }
@@ -64,13 +83,15 @@ export class TerrainLayer {
 
   /** Avisa os observadores sobre os chunks alterados desde o último flush. */
   flush() {
-    if (!this.dirty.size) return;
+    if (!this.dirty.size || !this.dirtyCells) return;
     const d = this.dirty;
+    const cells = this.dirtyCells;
     this.dirty = new Set();
-    this.listeners.forEach((fn) => fn(d));
+    this.dirtyCells = null;
+    this.listeners.forEach((fn) => fn(d, cells));
   }
 
-  onChange(fn: (dirty: ReadonlySet<ChunkKey>) => void) {
+  onChange(fn: (dirty: ReadonlySet<ChunkKey>, cells: DirtyCells) => void) {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   }

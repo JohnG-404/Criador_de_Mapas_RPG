@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY } from '../core/doc/terrain';
+import { TOKEN_COLORS } from '../core/doc/objects';
 import { Editor } from './Editor';
 
 function editor(kind: 'square' | 'hex' = 'square') {
@@ -59,5 +60,123 @@ describe('Editor', () => {
     expect(e.getState().canUndo).toBe(false);
     expect(e.getState().docVersion).toBe(v + 1);
     expect(e.doc.grid.kind).toBe('hex');
+  });
+});
+
+describe('Editor: paredes, portas, objetos e tokens', () => {
+  it('arrastar com Parede cria um segmento encaixado; Shift cria uma sala', () => {
+    const e = editor();
+    e.setTool('wall');
+    e.pointerDown({ x: 34, y: 30 });
+    e.pointerMove({ x: 160, y: 33 });
+    e.pointerUp();
+    const [w] = e.doc.walls.all();
+    expect(w.a).toEqual({ x: 32, y: 32 });
+    expect(w.b).toEqual({ x: 160, y: 32 });
+    e.pointerDown({ x: 320, y: 320 }, { shift: true });
+    e.pointerMove({ x: 480, y: 416 }, { shift: true });
+    e.pointerUp();
+    expect(e.doc.walls.size).toBe(5);
+    e.undo();
+    expect(e.doc.walls.size).toBe(1);
+  });
+
+  it('porta corta a parede e clicar de novo volta a ser parede', () => {
+    const e = editor();
+    e.setTool('wall');
+    e.pointerDown({ x: 0, y: 64 });
+    e.pointerMove({ x: 192, y: 64 });
+    e.pointerUp();
+    e.setTool('door');
+    e.pointerDown({ x: 80, y: 66 }); // aresta (64,64)-(96,64)
+    const kinds = e.doc.walls.all().map((w) => w.kind).sort();
+    expect(kinds).toEqual(['door', 'wall', 'wall']);
+    e.pointerDown({ x: 80, y: 66 });
+    expect(e.doc.walls.all().filter((w) => w.kind === 'door')).toHaveLength(0);
+    e.undo(); e.undo();
+    expect(e.doc.walls.size).toBe(1);
+  });
+
+  it('Alt+clique apaga a parede', () => {
+    const e = editor();
+    e.setTool('wall');
+    e.pointerDown({ x: 0, y: 64 });
+    e.pointerMove({ x: 96, y: 64 });
+    e.pointerUp();
+    e.pointerDown({ x: 50, y: 70 }, { alt: true });
+    expect(e.doc.walls.size).toBe(0);
+  });
+
+  it('coloca, seleciona, move, gira, escala e apaga objetos', () => {
+    const e = editor();
+    e.setObjectAsset('barril');
+    e.pointerDown({ x: 100, y: 100 });
+    const [o] = e.doc.objects.all();
+    expect(o).toMatchObject({ asset: 'barril', x: 96, y: 96 });
+    e.setTool('select');
+    e.pointerDown({ x: 98, y: 98 });
+    expect(e.getState().selection).toEqual({ layer: 'objects', id: o.id });
+    e.pointerMove({ x: 200, y: 160 });
+    e.pointerUp();
+    expect(e.doc.objects.get(o.id)).toMatchObject({ x: 192, y: 160 });
+    e.rotateSelection(45);
+    e.resizeSelection(1);
+    expect(e.doc.objects.get(o.id)!.rot).toBe(45);
+    expect(e.doc.objects.get(o.id)!.scale).toBeGreaterThan(1);
+    e.undo(); e.undo(); e.undo();
+    expect(e.doc.objects.get(o.id)).toMatchObject({ x: 96, y: 96, rot: 0, scale: 1 });
+    e.deleteSelection();
+    expect(e.doc.objects.size).toBe(0);
+  });
+
+  it('tokens recebem nomes A, B... e ficam no centro da célula', () => {
+    const e = editor();
+    e.setTool('token');
+    e.pointerDown({ x: 40, y: 40 });
+    e.pointerDown({ x: 100, y: 40 });
+    const names = e.doc.tokens.all().map((t) => t.name);
+    expect(names).toEqual(['A', 'B']);
+    expect(e.doc.tokens.all()[0]).toMatchObject({ x: 48, y: 48 });
+  });
+
+  it('camada travada não aceita edição e a seleção ignora camada oculta', () => {
+    const e = editor();
+    e.setLayer('walls', { locked: true });
+    e.setTool('wall');
+    e.pointerDown({ x: 0, y: 0 });
+    e.pointerMove({ x: 96, y: 0 });
+    e.pointerUp();
+    expect(e.doc.walls.size).toBe(0);
+    e.setTool('token');
+    e.pointerDown({ x: 40, y: 40 });
+    e.setLayer('tokens', { visible: false });
+    e.setTool('select');
+    e.pointerDown({ x: 48, y: 48 });
+    expect(e.getState().selection).toBeNull();
+  });
+
+  it('desfazer a criação de um item selecionado limpa a seleção', () => {
+    const e = editor();
+    e.setTool('token');
+    e.pointerDown({ x: 40, y: 40 });
+    expect(e.getState().selection).not.toBeNull();
+    e.undo();
+    expect(e.getState().selection).toBeNull();
+  });
+});
+
+describe('cor do token', () => {
+  it('com a ferramenta Token a cor vale para o próximo; em Selecionar recolore o selecionado', () => {
+    const ed = new Editor();
+    ed.setTool('token');
+    ed.setTokenColor(TOKEN_COLORS[1]);
+    ed.pointerDown({ x: 48, y: 48 }); ed.pointerUp();
+    ed.setTokenColor(TOKEN_COLORS[2]);
+    const first = ed.doc.tokens.all()[0];
+    expect(first.color).toBe(TOKEN_COLORS[1]);
+    ed.setTool('select');
+    ed.pointerDown({ x: 48, y: 48 }); ed.pointerUp();
+    ed.setTokenColor(TOKEN_COLORS[3]);
+    expect(ed.doc.tokens.get(first.id)!.color).toBe(TOKEN_COLORS[3]);
   });
 });
