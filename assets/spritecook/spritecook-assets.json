@@ -1,0 +1,55 @@
+{
+  "fonte": "SpriteCook (gpt-image-2, qualidade low)",
+  "assets": [
+    {
+      "arquivo": "realista/piso-pedra.png",
+      "asset_id": "2accee8d-fbc1-4ee6-9657-aa7d1d4b1b79",
+      "sha12": "f4542a642e33"
+    },
+    {
+      "arquivo": "realista/grama.png",
+      "asset_id": "37d613c8-abe1-4f39-a4de-8f53f46a9821",
+      "sha12": "9628f7a37e2f"
+    },
+    {
+      "arquivo": "realista/terra.png",
+      "asset_id": "3e7e34d3-7351-4955-966e-4ae673f55b76",
+      "sha12": "6eff3d008bc0"
+    },
+    {
+      "arquivo": "realista/agua.png",
+      "asset_id": "795348f9-db8d-4924-ab30-a530767226bb",
+      "sha12": "5d0089fb6cba"
+    },
+    {
+      "arquivo": "realista/objetos.png",
+      "asset_id": "22bd7f45-c739-4265-b73f-635a859fb031",
+      "sha12": "413dcff2c55b"
+    },
+    {
+      "arquivo": "cartografia/piso-pedra.png",
+      "asset_id": "87968c37-b760-43ed-9c07-bb5ac9ac4cb3",
+      "sha12": "15e31abf071f"
+    },
+    {
+      "arquivo": "cartografia/grama.png",
+      "asset_id": "6e02ea3e-136f-4f54-8594-890143761a04",
+      "sha12": "b63a7099a1ec"
+    },
+    {
+      "arquivo": "cartografia/terra.png",
+      "asset_id": "6c967f04-170c-4e64-9433-6a6bbed41cd5",
+      "sha12": "a4ab1217728e"
+    },
+    {
+      "arquivo": "cartografia/agua.png",
+      "asset_id": "59385175-b797-4e95-977a-5fa9ac0c891e",
+      "sha12": "0fe7ca3df74c"
+    },
+    {
+      "arquivo": "cartografia/objetos.png",
+      "asset_id": "b81f1111-2958-4c20-b11d-45fb8eef45e2",
+      "sha12": "dcc4964949b9"
+    }
+  ]
+}
