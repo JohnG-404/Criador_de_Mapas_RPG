@@ -1,12 +1,16 @@
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, Graphics, Rectangle } from 'pixi.js';
 import { Camera } from '../core/camera/Camera';
 import type { MapDocument } from '../core/doc/MapDocument';
 import { objectAsset } from '../core/doc/objects';
 import { sameCell, type Cell, type CellRange, type Point } from '../core/grid/GridSystem';
 import type { Editor, LayerId, LayerState } from '../editor/Editor';
 import { ContentRenderer } from './ContentRenderer';
+import { FogRenderer } from './FogRenderer';
 import { TerrainRenderer } from './TerrainRenderer';
 import { theme } from './theme';
+
+/** Mestre edita e vê a névoa translúcida; jogador só olha, com a névoa opaca. */
+export type ViewMode = 'gm' | 'player';
 
 export interface MapViewEvents {
   onHoverCell?: (cell: Cell | null) => void;
@@ -39,6 +43,9 @@ export class MapView {
   private hoverLayer = new Graphics();
   private contentHolder = new Container();
   private content: ContentRenderer | null = null;
+  private fog: FogRenderer | null = null;
+  private fogHolder = new Container();
+  private fittedSize = '';
   private overlayLayer = new Graphics();
   private layers: Record<LayerId, LayerState> | null = null;
   private lastPointer: Point | null = null;
@@ -59,6 +66,7 @@ export class MapView {
   constructor(
     private editor: Editor,
     private events: MapViewEvents = {},
+    readonly mode: ViewMode = 'gm',
   ) {
     this.doc = editor.doc;
     this.docVersion = editor.getState().docVersion;
@@ -87,7 +95,7 @@ export class MapView {
     canvas.setAttribute('aria-label', 'Área do mapa');
     canvas.dataset.testid = 'map-canvas';
 
-    this.world.addChild(this.mapLayer, this.terrainHolder, this.gridLayer, this.contentHolder, this.hoverLayer, this.overlayLayer);
+    this.world.addChild(this.mapLayer, this.terrainHolder, this.gridLayer, this.contentHolder, this.fogHolder, this.hoverLayer, this.overlayLayer);
     this.app.stage.addChild(this.world);
     this.camera.setViewSize(this.app.screen.width, this.app.screen.height);
     this.bindInput();
@@ -116,6 +124,7 @@ export class MapView {
     this.cleanup = [];
     this.terrain?.destroy();
     this.content?.destroy();
+    this.fog?.destroy();
     if ((this.app as unknown as { renderer?: unknown }).renderer) this.app.destroy(true, { children: true });
   }
 
@@ -132,10 +141,73 @@ export class MapView {
   zoomIn() { this.zoomBy(ZOOM_STEP); }
   zoomOut() { this.zoomBy(1 / ZOOM_STEP); }
 
+  /** Ferramentas só no modo mestre; o jogador só move e aproxima o mapa. */
+  private get toolEdits() { return this.mode === 'gm' && this.editor.toolEdits; }
+
+  /**
+   * Exporta o mapa inteiro como PNG (sem névoa, prévias e seleção).
+   * A escala é reduzida em mapas grandes para caber no limite de textura da GPU.
+   */
+  async exportPng(opts: { grid: boolean; scale?: number }): Promise<Blob> {
+    const b = this.doc.grid.worldBounds();
+    const maxSide = 8192;
+    const scale = Math.min(opts.scale ?? 2, maxSide / b.width, maxSide / b.height);
+    this.terrain?.update();
+    const saved = {
+      scale: this.world.scale.x, x: this.world.position.x, y: this.world.position.y,
+      grid: this.gridLayer.visible, fog: this.fogHolder.visible, hover: this.hoverLayer.visible, overlay: this.overlayLayer.visible,
+    };
+    this.world.scale.set(1);
+    this.world.position.set(0, 0);
+    this.fogHolder.visible = this.hoverLayer.visible = this.overlayLayer.visible = false;
+    // Desenha o grid inteiro (o normal só cobre a área visível).
+    this.gridLayer.visible = opts.grid;
+    if (opts.grid) this.drawFullGrid(1 / scale);
+    try {
+      const canvas = this.app.renderer.extract.canvas({
+        target: this.world,
+        frame: new Rectangle(b.x, b.y, b.width, b.height),
+        resolution: scale,
+        clearColor: '#00000000',
+      }) as HTMLCanvasElement;
+      return await new Promise<Blob>((resolve, reject) =>
+        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Falha ao gerar o PNG'))), 'image/png'),
+      );
+    } finally {
+      this.world.scale.set(saved.scale);
+      this.world.position.set(saved.x, saved.y);
+      this.gridLayer.visible = saved.grid;
+      this.fogHolder.visible = saved.fog;
+      this.hoverLayer.visible = saved.hover;
+      this.overlayLayer.visible = saved.overlay;
+      this.gridCache = null;
+      this.invalidate();
+    }
+  }
+
+  private drawFullGrid(lineScale: number) {
+    const grid = this.doc.grid;
+    const g = this.gridLayer.clear();
+    const b = grid.worldBounds();
+    const all = { minCol: 0, maxCol: grid.cols - 1, minRow: 0, maxRow: grid.rows - 1 };
+    const z = this.camera.zoom;
+    // Os métodos de grid usam a espessura relativa ao zoom; simula zoom = 1/lineScale.
+    this.camera.zoom = 1 / lineScale;
+    try {
+      g.rect(b.x, b.y, b.width, b.height).stroke({ color: theme.gridBorder, width: 2 * lineScale, alpha: 1 });
+      if (grid.kind === 'square') this.drawSquareGrid(g, all, 40);
+      else this.drawHexGrid(g, all, 40);
+    } finally {
+      this.camera.zoom = z;
+    }
+  }
+
   private async loadDocument() {
     this.terrain?.destroy();
     this.content?.destroy();
     this.content = null;
+    this.fog?.destroy();
+    this.fog = null;
     this.doc = this.editor.doc;
     const renderer = new TerrainRenderer(this.doc);
     const content = new ContentRenderer(this.doc);
@@ -152,12 +224,21 @@ export class MapView {
     content.onChange = () => this.invalidate();
     content.start();
     this.contentHolder.addChild(content.objects, content.walls, content.tokens);
+    const fog = new FogRenderer(this.doc, this.mode);
+    fog.buildAll();
+    fog.onChange = () => this.invalidate();
+    this.fog = fog;
+    this.fogHolder.addChild(fog.container);
     this.layers = null;
     this.applyLayers();
     this.gridCache = null;
     this.mapCacheZoom = 0;
     this.hoverCell = null;
-    this.fitToMap();
+    // Só reenquadra quando o tamanho do mapa muda (a janela do jogador recebe o mapa a cada edição).
+    const size = `${this.doc.grid.kind}:${this.doc.grid.cols}x${this.doc.grid.rows}`;
+    if (size !== this.fittedSize || this.mode === 'gm') this.fitToMap();
+    else this.afterCameraChange();
+    this.fittedSize = size;
   }
 
   private onEditorState() {
@@ -181,6 +262,12 @@ export class MapView {
     const layers = this.editor.getState().layers;
     if (layers === this.layers) return;
     this.layers = layers;
+    if (this.mode === 'player') {
+      this.terrainHolder.visible = true;
+      this.fogHolder.visible = true;
+      return;
+    }
+    this.fogHolder.visible = layers.fog.visible;
     this.terrainHolder.visible = layers.terrain.visible;
     if (this.content) {
       this.content.walls.visible = layers.walls.visible;
@@ -203,6 +290,7 @@ export class MapView {
       this.dirty = true;
     }
     if (this.terrain?.update()) this.dirty = true;
+    if (this.fog?.update()) this.dirty = true;
     if (!this.dirty) return;
     this.dirty = false;
 
@@ -212,8 +300,10 @@ export class MapView {
 
     this.drawMap();
     this.drawGrid();
-    this.drawHover();
-    this.drawOverlay();
+    if (this.mode === 'gm') {
+      this.drawHover();
+      this.drawOverlay();
+    }
     this.app.render();
   }
 
@@ -372,7 +462,7 @@ export class MapView {
     const canvas = this.app.canvas;
     if (!canvas) return;
     if (this.drag?.kind === 'pan') canvas.style.cursor = 'grabbing';
-    else if (this.spaceDown || !this.editor.toolEdits) canvas.style.cursor = 'grab';
+    else if (this.spaceDown || !this.toolEdits) canvas.style.cursor = 'grab';
     else if (this.editor.getState().tool === 'select') canvas.style.cursor = 'default';
     else if (!this.editor.toolLayerEditable) canvas.style.cursor = 'not-allowed';
     else canvas.style.cursor = 'crosshair';
@@ -402,7 +492,7 @@ export class MapView {
       if (this.drag) return;
       const p = this.localPoint(e);
       // Botão esquerdo usa a ferramenta; meio/direito, Espaço ou a ferramenta Mover arrastam o mapa.
-      const useTool = e.button === 0 && this.editor.toolEdits && !this.spaceDown;
+      const useTool = e.button === 0 && this.toolEdits && !this.spaceDown;
       canvas.setPointerCapture(e.pointerId);
       if (useTool) {
         this.drag = { kind: 'tool', pointerId: e.pointerId };

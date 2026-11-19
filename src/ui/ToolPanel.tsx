@@ -14,6 +14,7 @@ const TOOL_ICONS: Record<ToolId, string> = {
   wall: 'M3 6h18v12H3zM3 12h18M9 6v6M15 12v6',
   door: 'M5 21V4h10v17M15 4l4 2v15M3 21h18M12 12.5v.5',
   object: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5',
+  fog: 'M4 10h11a3 3 0 1 0-3-3M3 14h15a3 3 0 1 1-3 3M6 18h5',
   token: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM7.5 17.5c1-2 2.6-3 4.5-3s3.5 1 4.5 3',
 };
 
@@ -33,7 +34,7 @@ function Icon({ d, size = 20 }: { d: string; size?: number }) {
 export function ToolPanel({ editor, state }: { editor: Editor; state: EditorState }) {
   const { tool } = state;
   const terrainTool = tool === 'brush' || tool === 'eraser' || tool === 'bucket';
-  const usesBrush = tool === 'brush' || tool === 'eraser';
+  const usesBrush = tool === 'brush' || tool === 'eraser' || tool === 'fog';
   return (
     <aside className="panel" aria-label="Ferramentas">
       <section>
@@ -56,44 +57,63 @@ export function ToolPanel({ editor, state }: { editor: Editor; state: EditorStat
       </section>
 
       {terrainTool && (
-        <>
-          <section>
-            <h2>Terreno</h2>
-            <div className="terrains" role="radiogroup" aria-label="Terreno">
-              {TERRAINS.map((t, i) => (
-                <button
-                  key={t.id}
-                  role="radio"
-                  aria-checked={state.terrain === t.id}
-                  className={state.terrain === t.id ? 'active' : ''}
-                  onClick={() => editor.setTerrain(t.id)}
-                  title={`${t.name} (${i + 1})`}
-                >
-                  <span className="swatch" style={{ backgroundImage: `url(${TERRAIN_TEXTURE_URLS[t.key]})` }} />
-                  <span>{t.name}</span>
-                  <kbd>{i + 1}</kbd>
-                </button>
-              ))}
-            </div>
-          </section>
-          <section className={usesBrush ? '' : 'dimmed'}>
-            <h2>
-              <label htmlFor="brush-size">Tamanho do pincel</label>
-              <output data-testid="brush-size">{state.brushSize}</output>
-            </h2>
-            <input
-              id="brush-size"
-              type="range"
-              min={MIN_BRUSH}
-              max={MAX_BRUSH}
-              value={state.brushSize}
-              disabled={!usesBrush}
-              onChange={(e) => editor.setBrushSize(Number(e.target.value))}
-            />
-            <p className="help">[ e ] mudam o tamanho</p>
-          </section>
-        </>
+        <section>
+          <h2>Terreno</h2>
+          <div className="terrains" role="radiogroup" aria-label="Terreno">
+            {TERRAINS.map((t, i) => (
+              <button
+                key={t.id}
+                role="radio"
+                aria-checked={state.terrain === t.id}
+                className={state.terrain === t.id ? 'active' : ''}
+                onClick={() => editor.setTerrain(t.id)}
+                title={`${t.name} (${i + 1})`}
+              >
+                <span className="swatch" style={{ backgroundImage: `url(${TERRAIN_TEXTURE_URLS[t.key]})` }} />
+                <span>{t.name}</span>
+                <kbd>{i + 1}</kbd>
+              </button>
+            ))}
+          </div>
+        </section>
       )}
+
+      {tool === 'fog' && (
+        <section>
+          <h2>Névoa de guerra</h2>
+          <div className="segmented" role="radiogroup" aria-label="Modo da névoa">
+            {(['hide', 'reveal'] as const).map((m) => (
+              <button key={m} role="radio" aria-checked={state.fogMode === m} className={state.fogMode === m ? 'active' : ''} onClick={() => editor.setFogMode(m)}>
+                {m === 'hide' ? 'Cobrir' : 'Revelar'}
+              </button>
+            ))}
+          </div>
+          <div className="row-buttons">
+            <button onClick={() => editor.fogAll(true)}>Cobrir tudo</button>
+            <button onClick={() => editor.fogAll(false)}>Revelar tudo</button>
+          </div>
+          <p className="help">Pinte com o mouse. <kbd>Alt</kbd> inverte o modo durante o traço. Os jogadores veem a névoa opaca.</p>
+        </section>
+      )}
+
+      {usesBrush || terrainTool ? (
+        <section className={usesBrush ? '' : 'dimmed'}>
+          <h2>
+            <label htmlFor="brush-size">Tamanho do pincel</label>
+            <output data-testid="brush-size">{state.brushSize}</output>
+          </h2>
+          <input
+            id="brush-size"
+            type="range"
+            min={MIN_BRUSH}
+            max={MAX_BRUSH}
+            value={state.brushSize}
+            disabled={!usesBrush}
+            onChange={(e) => editor.setBrushSize(Number(e.target.value))}
+          />
+          <p className="help">[ e ] mudam o tamanho</p>
+        </section>
+      ) : null}
 
       {(tool === 'wall' || tool === 'door') && (
         <section>

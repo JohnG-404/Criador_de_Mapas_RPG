@@ -96,6 +96,24 @@ export class TerrainLayer {
     return () => this.listeners.delete(fn);
   }
 
+  /** Copia todas as células para um array linha a linha (cols × rows). */
+  toArray(): Uint8Array {
+    const out = new Uint8Array(this.cols * this.rows);
+    for (let row = 0; row < this.rows; row++) {
+      for (let col = 0; col < this.cols; col++) out[row * this.cols + col] = this.get(col, row);
+    }
+    return out;
+  }
+
+  /** Substitui todas as células por um array linha a linha e avisa os observadores. */
+  loadArray(data: Uint8Array) {
+    if (data.length !== this.cols * this.rows) throw new Error('Tamanho de camada inválido');
+    for (let row = 0; row < this.rows; row++) {
+      for (let col = 0; col < this.cols; col++) this.set(col, row, data[row * this.cols + col]);
+    }
+    this.flush();
+  }
+
   /** Limites (em células) de um chunk. */
   chunkBounds(cx: number, cy: number) {
     const minCol = cx * CHUNK_SIZE;

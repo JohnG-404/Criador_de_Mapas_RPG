@@ -180,3 +180,39 @@ describe('cor do token', () => {
     expect(ed.doc.tokens.get(first.id)!.color).toBe(TOKEN_COLORS[3]);
   });
 });
+
+describe('névoa de guerra', () => {
+  it('cobre e revela com o pincel; Alt inverte; cada traço é um passo', () => {
+    const ed = new Editor();
+    ed.setFogMode('hide');
+    ed.setBrushSize(1);
+    ed.pointerDown({ x: 16, y: 16 }); ed.pointerMove({ x: 80, y: 16 }); ed.pointerUp();
+    expect([0, 1, 2].map((c) => ed.doc.fog.get(c, 0))).toEqual([1, 1, 1]);
+    ed.pointerDown({ x: 48, y: 16 }, { alt: true }); ed.pointerUp();
+    expect(ed.doc.fog.get(1, 0)).toBe(0);
+    ed.undo();
+    expect(ed.doc.fog.get(1, 0)).toBe(1);
+    ed.undo();
+    expect(ed.doc.fog.get(0, 0)).toBe(0);
+  });
+
+  it('cobrir tudo e revelar tudo', () => {
+    const ed = new Editor({ name: 'x', gridKind: 'square', cols: 10, rows: 8, fill: 1, cellMeters: 1.5 });
+    ed.fogAll(true);
+    expect(ed.doc.fog.toArray().every((v) => v === 1)).toBe(true);
+    ed.setFogMode('reveal');
+    ed.setBrushSize(1);
+    ed.pointerDown({ x: 16, y: 16 }); ed.pointerUp();
+    expect(ed.doc.fog.get(0, 0)).toBe(0);
+    ed.fogAll(false);
+    expect(ed.doc.fog.toArray().every((v) => v === 0)).toBe(true);
+  });
+
+  it('camada de névoa travada não aceita pintura', () => {
+    const ed = new Editor();
+    ed.setLayer('fog', { locked: true });
+    ed.setFogMode('hide');
+    ed.pointerDown({ x: 16, y: 16 }); ed.pointerUp();
+    expect(ed.doc.fog.get(0, 0)).toBe(0);
+  });
+});
