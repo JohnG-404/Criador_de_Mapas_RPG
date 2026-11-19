@@ -2,6 +2,8 @@
 
 ## Rodada 3: arte gerada no SpriteCook (atual)
 
+**Escolhido: 1. Realista diurno** (19/11/2026). Ele define o pacote de assets inicial do editor; a masmorra noturna continua como referência para a iluminação da fase 5.
+
 O mesmo mapa (salão de pedra com mesa, tapete, baú, barris, tochas e porta, mais estrada, lago, rochas e árvores, grade 16×10) montado com texturas e objetos gerados no [SpriteCook](https://spritecook.ai). As texturas de chão são contínuas (emendam sem costura), então cada uma vira um tile que cobre a grade inteira; os objetos foram gerados em folha 3×3 com fundo transparente e recortados um a um.
 
 | | Estilo | Ideia | Bom para |
