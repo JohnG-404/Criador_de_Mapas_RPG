@@ -71,7 +71,7 @@ test('parede, sala com Shift, porta e Alt+clique para apagar', async ({ page }) 
 
 test('objetos: colocar, selecionar, girar, mover e apagar', async ({ page }) => {
   await page.keyboard.press('o');
-  await page.getByRole('radio', { name: 'Baú' }).click();
+  await page.getByRole('radio', { name: 'Baú', exact: true }).click();
   await click(page, { x: 30 * 32, y: 20 * 32 });
   await expect(counts(page)).toContainText('1 objeto');
 
