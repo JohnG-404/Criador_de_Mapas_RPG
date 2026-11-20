@@ -40,6 +40,7 @@ npm run build      # gera a versão final em dist/
 | Relevo | Ferramenta Relevo (`L`): subir, baixar, aplainar e suavizar com o pincel (`Alt` inverte subir e baixar). Aparece sombreado no 2D e com altura de verdade no 3D |
 | Modelos de token | Ferramenta Token (`T`): personagens e inimigos prontos de D&D 5e (criaturas do SRD 5.1) e de horror investigativo, com retrato, tamanho e ficha (PV, CA ou Defesa, Sanidade). Dano e cura rápidos no painel |
 | Sala online | Botão **Sala online**: abre uma sala e gera um link. Os jogadores abrem o link em qualquer computador ou celular e veem o mapa ao vivo, com a névoa opaca. Notas do mestre e inimigos escondidos pela névoa não são enviados. Usa o Realtime do Supabase |
+| Nuvem | Botão **Nuvem**: salva o mapa no Supabase e gera um link para abrir e continuar em outro computador. Não precisa de conta; a chave do mapa vai no link, depois do `#`, e a lista de mapas fica no navegador. Limite de 8 MB por mapa. A tabela e as funções estão em `supabase/migrations` |
 | Ver em 3D | Botão **Ver em 3D**: paredes com altura (baixa, média ou alta), portas, objetos em volume, água afundada e tokens como miniaturas. Arraste para girar, botão direito move, roda aproxima. `Esc` ou **Voltar ao 2D** fecha |
 | Imagem própria | Ferramenta Objeto (`O`) e **Importar imagem…** (PNG, WebP ou JPEG). A imagem fica guardada dentro do arquivo `.rpgmap` |
 | Enquadrar os jogadores | Mostrar esta área: a janela dos jogadores passa a mostrar o que você está vendo |

@@ -219,3 +219,7 @@ html, body, #root { margin: 0; height: 100%; }
 .dialog .dialog-text { margin: 0; font-size: 13px; line-height: 1.45; color: var(--text); max-width: 460px; }
 .dialog .help { margin: 0; font-size: 12px; color: var(--muted); }
 .dialog .actions .danger-text { margin-right: auto; color: #e07a6f; }
+
+.cloud-list { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; max-height: 220px; overflow: auto; }
+.cloud-list li { display: flex; align-items: center; gap: 8px; }
+.cloud-list .cloud-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
