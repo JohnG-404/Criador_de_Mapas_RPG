@@ -19,22 +19,17 @@ export function startPlayerBroadcast(editor: Editor): { stop: () => void; showVi
   let timer = 0;
   const send = () => {
     timer = 0;
-    ch.postMessage({ type: 'map', map: serializeDoc(editor.doc) } satisfies Message);
+    // Os jogadores veem o mapa deles, que pode não ser o aberto no editor.
+    ch.postMessage({ type: 'map', map: serializeDoc(editor.playerDoc) } satisfies Message);
   };
   const schedule = () => {
     if (!timer) timer = window.setTimeout(send, SEND_DELAY_MS);
   };
   ch.onmessage = (e: MessageEvent<Message>) => { if (e.data?.type === 'hello') send(); };
-  const offHistory = editor.history.onChange(schedule);
-  let docVersion = editor.getState().docVersion;
-  const offState = editor.subscribe(() => {
-    const v = editor.getState().docVersion;
-    if (v !== docVersion) { docVersion = v; schedule(); }
-  });
+  const offChange = editor.onDocChange(schedule);
   return {
     stop: () => {
-      offHistory();
-      offState();
+      offChange();
       window.clearTimeout(timer);
       ch.close();
     },

@@ -39,6 +39,22 @@ export interface Note extends Item {
   text: string;
 }
 
+/**
+ * Passagem para outro mapa da campanha (escada, porta, portal...).
+ * Fica no centro de uma célula e só o mestre vê o marcador.
+ */
+export interface MapLink extends Item {
+  x: number;
+  y: number;
+  /** Id do mapa de destino ('' = sem destino ainda). */
+  target: string;
+  label: string;
+}
+
+export function hitLink(l: MapLink, cellSize: number, p: Point): boolean {
+  return Math.hypot(p.x - l.x, p.y - l.y) <= cellSize * 0.45;
+}
+
 export function hitNote(n: Note, cellSize: number, p: Point): boolean {
   return Math.abs(p.x - n.x) <= cellSize * 0.4 && Math.abs(p.y - n.y) <= cellSize * 0.4;
 }
