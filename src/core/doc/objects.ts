@@ -65,6 +65,22 @@ export const OBJECT_ASSETS: readonly ObjectAsset[] = [
   { key: 'tronco', name: 'Tronco caído', w: 2.6, h: 0.25 },
   { key: 'mesa-redonda', name: 'Mesa redonda', w: 1.4, h: 1.4 },
   { key: 'mesa-piquenique', name: 'Mesa de piquenique', w: 2.4, h: 1.78 },
+  { key: 'rochas-quebradas', name: 'Rochas quebradas', w: 1.8, h: 0.88 },
+  { key: 'rocha-grande', name: 'Rocha grande', w: 1.7, h: 1.68 },
+  { key: 'pedra-vermelha', name: 'Pedra avermelhada', w: 0.8, h: 0.49 },
+  { key: 'rocha-escura', name: 'Rocha escura', w: 0.55, h: 1.04 },
+  { key: 'galho-seco', name: 'Galho seco', w: 2.4, h: 0.64 },
+  { key: 'samambaia', name: 'Samambaia', w: 1, h: 0.9 },
+  { key: 'fogueira', name: 'Fogueira de pedra', w: 1.3, h: 1.29 },
+  { key: 'estatua', name: 'Estátua', w: 1.4, h: 1.47 },
+  { key: 'mesa-pequena', name: 'Mesa pequena', w: 1.2, h: 0.75 },
+  { key: 'banco', name: 'Banco', w: 1.2, h: 0.52 },
+  { key: 'banquinho', name: 'Banquinho', w: 0.5, h: 0.52 },
+  { key: 'cadeira', name: 'Cadeira', w: 0.55, h: 0.69 },
+  { key: 'comoda', name: 'Cômoda', w: 1.2, h: 0.52 },
+  { key: 'balde', name: 'Balde', w: 0.45, h: 0.42 },
+  { key: 'cesto', name: 'Cesto', w: 0.55, h: 0.42 },
+  { key: 'vaso', name: 'Vaso de cerâmica', w: 0.4, h: 0.4 },
 ];
 
 export function objectAsset(key: string) {
