@@ -13,6 +13,7 @@ import { generate, type GeneratorKind } from '../core/procgen';
 import { PaintCommand } from '../core/history/PaintCommand';
 import { floodFill } from '../core/tools/floodFill';
 import { strokeCells } from '../core/tools/strokeCells';
+import { cleanSheet, tokenTemplate, type TokenSheet } from '../core/doc/tokenTemplates';
 import { brushAmount, clampLevel, distanceToStroke, ELEV_ZERO, smoothedLevel, type ElevMode } from '../core/doc/elevation';
 
 export type ToolId = 'pan' | 'select' | 'brush' | 'eraser' | 'bucket' | 'elevation' | 'wall' | 'door' | 'object' | 'token' | 'fog' | 'ruler' | 'note';
@@ -74,6 +75,8 @@ export interface EditorState {
   /** Tema das próximas paredes desenhadas. */
   wallStyle: string;
   tokenColor: string;
+  /** Modelo usado pela ferramenta Token (null = token simples com letra). */
+  tokenTemplate: string | null;
   fogMode: FogMode;
   /** Pincel de relevo: subir, baixar, aplainar ou suavizar. */
   elevMode: ElevMode;
@@ -131,6 +134,7 @@ export class Editor {
       objectAsset: OBJECT_ASSETS[0].key,
       wallStyle: DEFAULT_WALL_STYLE,
       tokenColor: TOKEN_COLORS[0],
+      tokenTemplate: null,
       fogMode: 'hide',
       elevMode: 'raise',
       elevStrength: 4,
@@ -491,6 +495,34 @@ export class Editor {
     this.commit(this.doc.objects, 'Escalar objeto', [[o.id, { ...o, scale }]]);
   }
 
+  setTokenTemplate(tokenTemplate: string | null) { this.set({ tokenTemplate, tool: 'token' }); }
+
+  /** Muda a ficha do token selecionado (cria uma ficha vazia se ele não tiver). */
+  updateTokenSheet(patch: Partial<TokenSheet>) {
+    const sel = this.state.selection;
+    if (sel?.layer !== 'tokens') return;
+    const t = this.doc.tokens.get(sel.id);
+    if (!t) return;
+    const base: TokenSheet = t.sheet ?? { hp: 10, hpMax: 10, def: 10, move: 9 };
+    const sheet = cleanSheet({ ...base, ...patch });
+    if (sheet) this.commit(this.doc.tokens, 'Ficha', [[t.id, { ...t, sheet }]]);
+  }
+
+  /** Dano (negativo) ou cura (positivo) no token selecionado, sem passar do máximo. */
+  changeHp(delta: number) {
+    const t = this.selectedToken();
+    if (!t?.sheet) return;
+    this.updateTokenSheet({ hp: Math.min(t.sheet.hpMax, t.sheet.hp + delta) });
+  }
+
+  removeTokenSheet() {
+    const t = this.selectedToken();
+    if (!t?.sheet) return;
+    const rest: Token = { ...t };
+    delete rest.sheet;
+    this.commit(this.doc.tokens, 'Ficha', [[t.id, rest]]);
+  }
+
   renameSelectedToken(name: string) {
     const sel = this.state.selection;
     if (sel?.layer !== 'tokens') return;
@@ -661,8 +693,16 @@ export class Editor {
     if (!cell) return;
     const pos = this.doc.grid.cellToWorld(cell);
     const id = newId('t');
-    const name = nextTokenName(this.doc.tokens.all().map((t) => t.name));
-    this.commit(this.doc.tokens, 'Token', [[id, { id, name, ...pos, size: 1, color: this.state.tokenColor }]]);
+    const used = this.doc.tokens.all().map((t) => t.name);
+    const tpl = tokenTemplate(this.state.tokenTemplate ?? undefined);
+    const token: Token = tpl
+      ? {
+        id, ...pos, name: nextTemplateName(tpl.name, used), size: tpl.size, color: tpl.color,
+        template: tpl.key, sheet: { ...tpl.sheet },
+        ...(tpl.kind === 'pc' ? { pc: true, vision: DEFAULT_VISION } : {}),
+      }
+      : { id, name: nextTokenName(used), ...pos, size: 1, color: this.state.tokenColor };
+    this.commit(this.doc.tokens, tpl ? `Token: ${tpl.name}` : 'Token', [[id, token]]);
     this.set({ selection: { layer: 'tokens', id } });
   }
 
@@ -743,6 +783,13 @@ export class Editor {
       cmd.paint(c.col, c.row, clampLevel(orig + (e.mode === 'raise' ? amount : -amount)) + ELEV_ZERO);
     }
   }
+}
+
+/** "Goblin", depois "Goblin 2", "Goblin 3"... */
+export function nextTemplateName(base: string, used: string[]) {
+  const set = new Set(used);
+  if (!set.has(base)) return base;
+  for (let i = 2; ; i++) if (!set.has(`${base} ${i}`)) return `${base} ${i}`;
 }
 
 /** Próximo nome livre: A, B, C... Z, depois A2, B2... */

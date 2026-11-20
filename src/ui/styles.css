@@ -195,3 +195,24 @@ html, body, #root { margin: 0; height: 100%; }
 .panel .slider { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
 .panel .slider span { display: flex; justify-content: space-between; }
 .panel .slider input { width: 100%; accent-color: var(--accent); }
+.panel h3 { margin: 10px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.token-templates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.token-templates button {
+  display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 5px 2px; background: #232833;
+  border: 1px solid var(--panel-border); border-radius: 8px; color: var(--text); font-size: 10.5px; line-height: 1.15; cursor: pointer; text-align: center;
+}
+.token-templates button:hover { border-color: #5a6274; }
+.token-templates button.active { border-color: var(--accent); background: #3a3426; }
+.token-templates img { width: 44px; height: 44px; border-radius: 50%; background: #2b3324; border: 2px solid; object-fit: cover; }
+.panel .simple-token { width: 100%; margin-bottom: 8px; background: #2b303c; border: 1px solid var(--panel-border); border-radius: 6px; padding: 6px; color: var(--text); font-size: 13px; cursor: pointer; }
+.panel .simple-token.active { border-color: var(--accent); color: var(--accent); }
+.sheet { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.sheet > button { background: #2b303c; border: 1px solid var(--panel-border); border-radius: 6px; padding: 6px; color: var(--text); font-size: 13px; cursor: pointer; }
+.sheet-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.sheet-field { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); }
+.sheet-field input, .hp-quick input {
+  width: 100%; box-sizing: border-box; background: #1e222b; border: 1px solid var(--panel-border); border-radius: 6px; color: var(--text); padding: 4px 6px; font: inherit; font-size: 13px;
+}
+.hp-quick { display: grid !important; grid-template-columns: 1fr 56px 1fr; gap: 6px; }
+.hp-quick input { text-align: center; }
+.sheet-down { color: #e07a6f; font-weight: 600; }

@@ -273,7 +273,7 @@ export class MapView {
     this.elevation = null;
     this.doc = this.editor.doc;
     const renderer = new TerrainRenderer(this.doc);
-    const content = new ContentRenderer(this.doc);
+    const content = new ContentRenderer(this.doc, this.mode === 'player');
     this.terrain = renderer;
     await Promise.all([renderer.load(), content.load()]);
     if (this.destroyed || this.terrain !== renderer) {

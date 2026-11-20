@@ -101,6 +101,18 @@ describe('arquivo .rpgmap', () => {
     expect(back.elevation.get(0, 0)).toBe(ELEV_ZERO);
   });
 
+  it('guarda modelo e ficha do token e limpa valores estranhos', () => {
+    const doc = new MapDocument(opts);
+    doc.tokens.put('t', { id: 't', name: 'Goblin', x: 16, y: 16, size: 1, color: '#b8322c', template: 'goblin', sheet: { hp: 3, hpMax: 7, def: 15, move: 9, cr: '1/4' } });
+    const f = JSON.parse(docToJson(doc));
+    expect(parseMap(f).tokens.get('t')).toMatchObject({ template: 'goblin', sheet: { hp: 3, hpMax: 7, def: 15, cr: '1/4' } });
+    f.tokens[0].template = 'nao-existe';
+    f.tokens[0].sheet = { hp: 'x', hpMax: 7, def: 1 };
+    const t = parseMap(f).tokens.get('t')!;
+    expect(t.template).toBeUndefined();
+    expect(t.sheet).toBeUndefined();
+  });
+
   it('gera nome de arquivo sem acentos', () => {
     expect(mapFileName('Taverna do Dragão!')).toBe('taverna-do-dragao.rpgmap');
     expect(mapFileName('   ')).toBe('mapa.rpgmap');

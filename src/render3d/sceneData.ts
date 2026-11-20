@@ -57,6 +57,8 @@ export interface Mini {
   z: number;
   size: number;
   ground: number;
+  /** Modelo do token (retrato em assets/tokens). */
+  template?: string;
 }
 
 export interface SceneData {
@@ -203,6 +205,7 @@ export function buildSceneData(doc: MapDocument, wallHeight: WallHeight = 'media
 
   const minis: Mini[] = doc.tokens.all().map((t) => ({
     id: t.id, name: t.name, color: t.color, x: t.x / cell, z: t.y / cell, size: t.size, ground: surface(t.x, t.y),
+    ...(t.template ? { template: t.template } : {}),
   }));
 
   const { cols, rows } = doc.grid;

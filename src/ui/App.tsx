@@ -109,7 +109,7 @@ export function App() {
         <div className="brand">
           <img src="./favicon.svg" alt="" width={22} height={22} />
           <span>Atlas Board</span>
-          <span className="tag">fase 7</span>
+          <span className="tag">fase 8</span>
         </div>
         <div className="toolbar" role="toolbar" aria-label="Arquivo e histórico">
           <button onClick={() => setNewMapOpen(true)}>Novo mapa</button>

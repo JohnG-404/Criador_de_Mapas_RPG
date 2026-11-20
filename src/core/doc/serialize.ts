@@ -2,6 +2,7 @@ import { MapDocument, type NewMapOptions } from './MapDocument';
 import type { CustomAsset, MapObject, Note, Token } from './objects';
 import { DEFAULT_VISION, OBJECT_ASSETS } from './objects';
 import { styleField, type WallSegment } from './walls';
+import { cleanSheet, tokenTemplate } from './tokenTemplates';
 import { clampLevel, ELEV_ZERO, hasRelief } from './elevation';
 
 /** Formato do arquivo .rpgmap (JSON). */
@@ -114,6 +115,8 @@ export function parseMap(text: string | MapFile): MapDocument {
         size: finite(t.size) && t.size > 0 ? t.size : 1,
         color: typeof t.color === 'string' && /^#[0-9a-f]{6}$/i.test(t.color) ? t.color : '#888888',
         ...(t.pc ? { pc: true, vision: finite(t.vision) && t.vision > 0 ? Math.min(60, t.vision) : DEFAULT_VISION } : {}),
+        ...(tokenTemplate(t.template) ? { template: t.template } : {}),
+        ...(cleanSheet(t.sheet) ? { sheet: cleanSheet(t.sheet) } : {}),
       });
     }
   }

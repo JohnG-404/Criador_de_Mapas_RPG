@@ -1,5 +1,5 @@
 import {
-  ACESFilmicToneMapping, BoxGeometry, Float32BufferAttribute, BufferGeometry, CanvasTexture, CapsuleGeometry, Color, CylinderGeometry,
+  ACESFilmicToneMapping, BoxGeometry, Float32BufferAttribute, BufferGeometry, CanvasTexture, CapsuleGeometry, CircleGeometry, Color, CylinderGeometry,
   DirectionalLight, DoubleSide, Fog, Group, HemisphereLight, Matrix4, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
   PerspectiveCamera, PlaneGeometry, SphereGeometry, RepeatWrapping, Scene, SRGBColorSpace, Sprite, SpriteMaterial, Texture,
   TextureLoader, Vector3, WebGLRenderer, type Material,
@@ -9,6 +9,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { MapDocument } from '../core/doc/MapDocument';
 import { isCustomAsset, objectAsset } from '../core/doc/objects';
 import { OBJECT_TEXTURE_URLS, WALL_TEXTURE_URLS } from '../render/objectTextures';
+import { TOKEN_ART_URLS } from '../render/tokenArt';
 import { buildSceneData, groundHeights, type Box, type Prop, type SceneData, type WallHeight } from './sceneData';
 
 /** Objetos de forma orgânica: as fatias afinam para cima (cúpula). */
@@ -125,7 +126,7 @@ export class View3D {
     this.unsub.forEach((f) => f());
     const d = this.doc;
     const again = () => this.scheduleRebuild(250);
-    this.unsub = [d.walls.onChange(again), d.objects.onChange(again), d.tokens.onChange(again), d.terrain.onChange(again), d.assets.onChange(again)];
+    this.unsub = [d.walls.onChange(again), d.objects.onChange(again), d.tokens.onChange(again), d.terrain.onChange(again), d.elevation.onChange(again), d.assets.onChange(again)];
   }
 
   private scheduleRebuild(ms: number) {
@@ -202,6 +203,7 @@ export class View3D {
     const wallStyles = new Set(s.boxes.map((b) => b.style));
     const wallTex = new Map<string, Texture>();
     const propTex = new Map<string, Texture>();
+    const tokenTex = new Map<string, Texture>();
     await Promise.all([
       ...[...wallStyles, 'madeira'].map(async (k) => {
         const url = WALL_TEXTURE_URLS[k];
@@ -210,6 +212,9 @@ export class View3D {
       ...[...new Set(s.props.map((p) => p.asset))].map(async (k) => {
         const t = this.propTexture(k);
         if (t) propTex.set(k, await t.catch(() => null as unknown as Texture));
+      }),
+      ...[...new Set(s.minis.map((m) => m.template).filter((k): k is string => !!k && !!TOKEN_ART_URLS[k]))].map(async (k) => {
+        tokenTex.set(k, await this.texture(`token:${k}`, TOKEN_ART_URLS[k]));
       }),
     ]);
     if (this.disposed || build !== this.builds) return;
@@ -225,7 +230,7 @@ export class View3D {
       const t = propTex.get(p.asset);
       if (t) this.addProp(p, t);
     }
-    this.addMinis(s);
+    this.addMinis(s, tokenTex);
     this.placeSun(s);
     this.frame(s);
     this.dirty = true;
@@ -406,10 +411,31 @@ export class View3D {
     group.add(pole, cup, flame);
   }
 
-  private addMinis(s: SceneData) {
+  private addMinis(s: SceneData, art: Map<string, Texture>) {
     const baseMat = new MeshStandardMaterial({ color: 0x23211f, roughness: 0.6 });
     for (const t of s.minis) {
       const r = t.size * 0.4;
+      const tex = t.template ? art.get(t.template) : undefined;
+      if (tex) {
+        // Ficha com retrato: disco na cor do token e a arte deitada por cima.
+        const h = 0.12;
+        const disc = new Mesh(new CylinderGeometry(r, r * 1.04, h, 36), [
+          new MeshStandardMaterial({ color: new Color(t.color), roughness: 0.5 }),
+          new MeshStandardMaterial({ color: 0x2b3324, roughness: 0.8 }),
+          baseMat,
+        ]);
+        disc.position.set(t.x, t.ground + h / 2, t.z);
+        disc.castShadow = disc.receiveShadow = true;
+        const face = new Mesh(new CircleGeometry(r * 0.88, 36).rotateX(-Math.PI / 2), new MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.05, roughness: 0.7 }));
+        face.position.set(t.x, t.ground + h + 0.003, t.z);
+        this.world.add(disc, face);
+        if (t.name) {
+          const label = makeLabel(t.name);
+          label.position.set(t.x, t.ground + h + 0.45, t.z);
+          this.world.add(label);
+        }
+        continue;
+      }
       const base = new Mesh(new CylinderGeometry(r, r * 1.05, 0.08, 28), baseMat);
       base.position.set(t.x, t.ground + 0.04, t.z);
       const color = new Color(t.color);

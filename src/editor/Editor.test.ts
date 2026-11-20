@@ -363,3 +363,43 @@ describe('Editor: relevo', () => {
     expect(lv(ed, 5, 5)).toBe(0);
   });
 });
+
+describe('Editor: modelos de token e ficha', () => {
+  it('coloca o modelo com arte, tamanho, cor e ficha; repete o nome numerado', () => {
+    const ed = new Editor({ ...DEFAULT_MAP, cols: 20, rows: 20 });
+    ed.setTokenTemplate('ogro');
+    ed.pointerDown({ x: 100, y: 100 }); ed.pointerUp();
+    ed.pointerDown({ x: 300, y: 100 }); ed.pointerUp();
+    const [a, b] = ed.doc.tokens.all();
+    expect(a).toMatchObject({ name: 'Ogro', template: 'ogro', size: 2, sheet: { hp: 59, hpMax: 59, def: 11, cr: '2' } });
+    expect(a.pc).toBeUndefined();
+    expect(b.name).toBe('Ogro 2');
+    ed.setTokenTemplate('ocultista');
+    ed.pointerDown({ x: 100, y: 300 }); ed.pointerUp();
+    const c = ed.doc.tokens.all()[2];
+    expect(c).toMatchObject({ pc: true, sheet: { san: 24, sanMax: 24 } });
+  });
+
+  it('dano e cura respeitam o máximo; a ficha pode ser editada e desfeita', () => {
+    const ed = new Editor({ ...DEFAULT_MAP, cols: 20, rows: 20 });
+    ed.setTokenTemplate('goblin');
+    ed.pointerDown({ x: 100, y: 100 }); ed.pointerUp();
+    ed.changeHp(-5);
+    expect(ed.selectedToken()!.sheet!.hp).toBe(2);
+    ed.changeHp(10);
+    expect(ed.selectedToken()!.sheet!.hp).toBe(7);
+    ed.updateTokenSheet({ def: 17 });
+    expect(ed.selectedToken()!.sheet!.def).toBe(17);
+    ed.undo();
+    expect(ed.selectedToken()!.sheet!.def).toBe(15);
+  });
+
+  it('token simples continua com letra e sem ficha', () => {
+    const ed = new Editor({ ...DEFAULT_MAP, cols: 20, rows: 20 });
+    ed.setTool('token');
+    ed.pointerDown({ x: 100, y: 100 }); ed.pointerUp();
+    const t = ed.doc.tokens.all()[0];
+    expect(t.name).toBe('A');
+    expect(t.sheet).toBeUndefined();
+  });
+});
