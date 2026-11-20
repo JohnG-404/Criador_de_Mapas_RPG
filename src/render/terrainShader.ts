@@ -1,4 +1,4 @@
-/** Shader que mistura as texturas de terreno usando a máscara RGBA do chunk. */
+/** Shader que mistura as texturas de terreno usando as máscaras RGBA do chunk. */
 export const TERRAIN_VERTEX = /* glsl */ `
 in vec2 aPosition;
 in vec2 aUV;
@@ -17,17 +17,25 @@ void main() {
 }
 `;
 
-export const TERRAIN_FRAGMENT = /* glsl */ `
+const CH = ['r', 'g', 'b', 'a'];
+
+/**
+ * Fragment shader para `count` terrenos: uma máscara RGBA a cada 4 terrenos
+ * (uMask1, uMask2...) e uma textura por terreno (uTex1, uTex2...).
+ */
+export function terrainFragment(count: number): string {
+  const layers = Math.ceil(count / 4);
+  const ids = Array.from({ length: count }, (_, i) => i);
+  const L = Array.from({ length: layers }, (_, l) => l + 1);
+  const ch = (i: number) => `w${(i >> 2) + 1}.${CH[i & 3]}`;
+  return /* glsl */ `
 precision highp float;
 in vec2 vUV;
 in vec2 vWorld;
 out vec4 finalColor;
 
-uniform sampler2D uMask;
-uniform sampler2D uTex1;
-uniform sampler2D uTex2;
-uniform sampler2D uTex3;
-uniform sampler2D uTex4;
+${L.map((l) => `uniform sampler2D uMask${l};`).join('\n')}
+${ids.map((i) => `uniform sampler2D uTex${i + 1};`).join('\n')}
 uniform float uTexScale;
 uniform float uCell;
 
@@ -46,26 +54,27 @@ float vnoise(vec2 p) {
 }
 
 void main() {
-  vec4 m = texture(uMask, vUV);
-  float msum = m.r + m.g + m.b + m.a;
+${L.map((l) => `  vec4 m${l} = texture(uMask${l}, vUV);`).join('\n')}
+  float msum = ${L.map((l) => `dot(m${l}, vec4(1.0))`).join(' + ')};
   if (msum < 0.01) { finalColor = vec4(0.0); return; }
   // Ruído em coordenadas do mundo deixa a borda entre terrenos irregular e natural.
   vec2 q = vWorld / uCell;
   float n = vnoise(q * 1.7) * 0.65 + vnoise(q * 4.3) * 0.35 - 0.5;
   vec4 n4 = vec4(n, -n, n * 0.8, -n * 0.8);
   // Pesos sempre positivos onde há terreno e normalizados: sem buracos na transição.
-  vec4 w = pow(clamp(m + n4 * 0.35 * step(0.01, m), 0.0001, 1.0), vec4(5.0));
-  w /= (w.r + w.g + w.b + w.a);
+${L.map((l) => `  vec4 w${l} = pow(clamp(m${l} + n4 * 0.35 * step(0.01, m${l}), 0.0001, 1.0), vec4(5.0));`).join('\n')}
+  float wsum = ${ids.map(ch).join(' + ')};
+${L.map((l) => `  w${l} /= wsum;`).join('\n')}
   vec2 tuv = vWorld / uTexScale;
-  vec3 col = texture(uTex1, tuv).rgb * w.r + texture(uTex2, tuv).rgb * w.g +
-             texture(uTex3, tuv).rgb * w.b + texture(uTex4, tuv).rgb * w.a;
+  vec3 col = ${ids.map((i) => `texture(uTex${i + 1}, tuv).rgb * ${ch(i)}`).join(' +\n             ')};
   // Leve sombra de contato onde dois terrenos se encontram.
-  float dominance = max(max(w.r, w.g), max(w.b, w.a));
+  float dominance = ${ids.slice(1).reduce((acc, i) => `max(${acc}, ${ch(i)})`, ch(0))};
   col *= mix(0.84, 1.0, smoothstep(0.5, 0.9, dominance));
-  // Água mais clara (rasa) perto da margem.
-  col = mix(col, col * vec3(1.15, 1.2, 1.1), w.b * (1.0 - smoothstep(0.6, 1.0, m.b)) * 0.7);
+  // Água (id 3) mais clara (rasa) perto da margem.
+  col = mix(col, col * vec3(1.15, 1.2, 1.1), w1.b * (1.0 - smoothstep(0.6, 1.0, m1.b)) * 0.7);
   // Borda com o vazio: some aos poucos, também irregular.
   float alpha = smoothstep(0.3, 0.7, msum + n * 0.3);
   finalColor = vec4(col * alpha, alpha);
 }
 `;
+}

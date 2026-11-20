@@ -9,7 +9,13 @@ export const MASK_MARGIN_CELLS = 2;
 /** Raio do desfoque em pixels da máscara (largura da transição entre terrenos). */
 export const MASK_BLUR = 2;
 
+/** Quantas máscaras RGBA são usadas (4 terrenos por máscara). */
+export const MASK_LAYERS = Math.ceil(TERRAINS.length / 4);
+/** Limite do shader: 3 máscaras + 12 texturas = 15 unidades de textura (o WebGL 2 garante 16). */
+export const MAX_TERRAINS = 12;
+
 export interface ChunkMask {
+  /** MASK_LAYERS máscaras RGBA em sequência, cada uma com width × height × 4 bytes. */
   data: Uint8Array;
   width: number;
   height: number;
@@ -19,7 +25,10 @@ export interface ChunkMask {
   maskRect: Rect;
 }
 
-if (TERRAINS.length > 4) throw new Error('A máscara RGBA suporta até 4 terrenos; adicione uma segunda máscara.');
+if (TERRAINS.length > MAX_TERRAINS) throw new Error(`O shader de terreno suporta até ${MAX_TERRAINS} terrenos.`);
+
+/** Posição do byte do terreno `id` (1..N) no pixel `p` da máscara. */
+const slot = (id: number, p: number, layerSize: number) => ((id - 1) >> 2) * layerSize + p * 4 + ((id - 1) & 3);
 
 /** Retângulo do mundo que envolve um intervalo de células. */
 export function cellRangeRect(grid: GridSystem, minCol: number, maxCol: number, minRow: number, maxRow: number): Rect {
@@ -40,8 +49,9 @@ export function cellRangeRect(grid: GridSystem, minCol: number, maxCol: number, 
 }
 
 /**
- * Máscara RGBA de um chunk: cada canal é a presença de um terreno (R = id 1,
- * G = id 2, B = id 3, A = id 4), amostrada em resolução baixa e desfocada.
+ * Máscaras RGBA de um chunk: cada canal é a presença de um terreno (máscara 1:
+ * R = id 1, G = id 2, B = id 3, A = id 4; máscara 2: ids 5 a 8; e assim por
+ * diante), amostrada em resolução baixa e desfocada.
  * A GPU interpola e o shader mistura as texturas com esses pesos, o que dá a
  * transição suave entre terrenos nos dois tipos de grid.
  */
@@ -53,7 +63,9 @@ export function buildChunkMask(grid: GridSystem, layer: TerrainLayer, cx: number
   const width = Math.ceil((quad.width + margin * 2) / px);
   const height = Math.ceil((quad.height + margin * 2) / px);
   const maskRect = { x: quad.x - margin, y: quad.y - margin, width: width * px, height: height * px };
-  const size = width * height * 4;
+  const layerSize = width * height * 4;
+  const size = layerSize * MASK_LAYERS;
+  const nT = TERRAINS.length;
   const data = out && out.length === size ? out : new Uint8Array(size);
   data.fill(0);
 
@@ -67,7 +79,7 @@ export function buildChunkMask(grid: GridSystem, layer: TerrainLayer, cx: number
         const col = Math.floor((maskRect.x + (i + 0.5) * px) / s);
         if (col < 0 || col >= grid.cols) continue;
         const id = layer.get(col, row);
-        if (id >= 1 && id <= 4) data[(j * width + i) * 4 + (id - 1)] = 255;
+        if (id >= 1 && id <= nT) data[slot(id, j * width + i, layerSize)] = 255;
       }
     }
   } else {
@@ -77,12 +89,15 @@ export function buildChunkMask(grid: GridSystem, layer: TerrainLayer, cx: number
         const cell = grid.worldToCell({ x: maskRect.x + (i + 0.5) * px, y });
         if (!cell) continue;
         const id = layer.get(cell.col, cell.row);
-        if (id >= 1 && id <= 4) data[(j * width + i) * 4 + (id - 1)] = 255;
+        if (id >= 1 && id <= nT) data[slot(id, j * width + i, layerSize)] = 255;
       }
     }
   }
-  boxBlurRGBA(data, width, height, MASK_BLUR);
-  boxBlurRGBA(data, width, height, MASK_BLUR);
+  for (let l = 0; l < MASK_LAYERS; l++) {
+    const layer = data.subarray(l * layerSize, (l + 1) * layerSize);
+    boxBlurRGBA(layer, width, height, MASK_BLUR);
+    boxBlurRGBA(layer, width, height, MASK_BLUR);
+  }
   return { data, width, height, quad, maskRect };
 }
 

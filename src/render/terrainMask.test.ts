@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { TerrainLayer } from '../core/doc/TerrainLayer';
 import { HexGrid } from '../core/grid/HexGrid';
 import { SquareGrid } from '../core/grid/SquareGrid';
-import { boxBlurRGBA, buildChunkMask, cellRangeRect, MASK_PX_PER_CELL } from './terrainMask';
+import { TERRAINS } from '../core/doc/terrain';
+import { boxBlurRGBA, buildChunkMask, cellRangeRect, MASK_LAYERS, MASK_PX_PER_CELL } from './terrainMask';
+import { terrainFragment } from './terrainShader';
 
 describe('máscara de terreno', () => {
   it('o desfoque preserva uma área uniforme', () => {
@@ -46,5 +48,26 @@ describe('máscara de terreno', () => {
         expect(p.y).toBeLessThanOrEqual(r.y + r.height + 1e-6);
       }
     }
+  });
+
+  it('terrenos acima do 4º vão para as máscaras seguintes', () => {
+    expect(MASK_LAYERS).toBe(Math.ceil(TERRAINS.length / 4));
+    const g = new SquareGrid(8, 8, 32);
+    const l = new TerrainLayer(8, 8, TERRAINS.length);
+    const m = buildChunkMask(g, l, 0, 0);
+    const layerSize = m.width * m.height * 4;
+    const mid = Math.floor(m.height / 2) * m.width + Math.floor(m.width / 2);
+    const id = TERRAINS.length;
+    expect(m.data.length).toBe(layerSize * MASK_LAYERS);
+    expect(m.data[((id - 1) >> 2) * layerSize + mid * 4 + ((id - 1) & 3)]).toBe(255);
+    expect(m.data[mid * 4]).toBe(0); // nada de grama na primeira máscara
+  });
+
+  it('o shader declara uma máscara a cada 4 terrenos e uma textura por terreno', () => {
+    const src = terrainFragment(TERRAINS.length);
+    expect(src).toContain(`uniform sampler2D uMask${MASK_LAYERS};`);
+    expect(src).not.toContain(`uMask${MASK_LAYERS + 1}`);
+    expect(src).toContain(`uniform sampler2D uTex${TERRAINS.length};`);
+    expect(src).not.toContain(`uTex${TERRAINS.length + 1};`);
   });
 });

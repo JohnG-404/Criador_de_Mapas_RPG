@@ -2,13 +2,13 @@ import { Assets, BufferImageSource, Container, Geometry, Mesh, Shader, Texture }
 import type { MapDocument } from '../core/doc/MapDocument';
 import { TERRAINS } from '../core/doc/terrain';
 import { CHUNK_SIZE, chunkKey, type ChunkKey, type DirtyCells } from '../core/doc/TerrainLayer';
-import { buildChunkMask, MASK_BLUR, MASK_MARGIN_CELLS } from './terrainMask';
-import { TERRAIN_FRAGMENT, TERRAIN_VERTEX } from './terrainShader';
+import { buildChunkMask, MASK_BLUR, MASK_LAYERS, MASK_MARGIN_CELLS } from './terrainMask';
+import { terrainFragment, TERRAIN_VERTEX } from './terrainShader';
 import { TERRAIN_TEXTURE_URLS, TEXTURE_CELLS } from './terrainTextures';
 
 interface ChunkView {
   mesh: Mesh<Geometry, Shader>;
-  source: BufferImageSource;
+  sources: BufferImageSource[];
   data: Uint8Array;
 }
 
@@ -63,7 +63,7 @@ export class TerrainRenderer {
     this.unsubscribe?.();
     for (const c of this.chunks.values()) {
       c.mesh.shader?.destroy();
-      c.source.destroy();
+      for (const s of c.sources) s.destroy();
     }
     this.container.destroy({ children: true });
   }
@@ -84,19 +84,20 @@ export class TerrainRenderer {
     const key = chunkKey(cx, cy);
     const existing = this.chunks.get(key);
     const mask = buildChunkMask(this.doc.grid, this.doc.terrain, cx, cy, existing?.data);
+    const layerSize = mask.width * mask.height * 4;
+    const layer = (l: number) => mask.data.subarray(l * layerSize, (l + 1) * layerSize);
     if (existing) {
-      existing.source.resource = mask.data;
-      existing.source.update();
+      existing.sources.forEach((s, l) => { s.resource = layer(l); s.update(); });
       return;
     }
-    const source = new BufferImageSource({
-      resource: mask.data,
+    const sources = Array.from({ length: MASK_LAYERS }, (_, l) => new BufferImageSource({
+      resource: layer(l),
       width: mask.width,
       height: mask.height,
       format: 'rgba8unorm',
       alphaMode: 'no-premultiply-alpha',
       scaleMode: 'linear',
-    });
+    }));
     const { quad, maskRect } = mask;
     const u0 = (quad.x - maskRect.x) / maskRect.width;
     const v0 = (quad.y - maskRect.y) / maskRect.height;
@@ -111,13 +112,10 @@ export class TerrainRenderer {
     });
     const cell = this.doc.grid.cellSize;
     const shader = Shader.from({
-      gl: { vertex: TERRAIN_VERTEX, fragment: TERRAIN_FRAGMENT, name: 'terrain-blend' },
+      gl: { vertex: TERRAIN_VERTEX, fragment: terrainFragment(TERRAINS.length), name: 'terrain-blend' },
       resources: {
-        uMask: source,
-        uTex1: this.textures[0].source,
-        uTex2: this.textures[1].source,
-        uTex3: this.textures[2].source,
-        uTex4: this.textures[3].source,
+        ...Object.fromEntries(sources.map((s, l) => [`uMask${l + 1}`, s])),
+        ...Object.fromEntries(this.textures.map((t, i) => [`uTex${i + 1}`, t.source])),
         terrainUniforms: {
           uTexScale: { value: TEXTURE_CELLS * cell, type: 'f32' },
           uCell: { value: cell, type: 'f32' },
@@ -126,6 +124,6 @@ export class TerrainRenderer {
     });
     const mesh = new Mesh({ geometry, shader });
     this.container.addChild(mesh);
-    this.chunks.set(key, { mesh, source, data: mask.data });
+    this.chunks.set(key, { mesh, sources, data: mask.data });
   }
 }
