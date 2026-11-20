@@ -3,8 +3,8 @@ name: App de desktop
 # Gera os instaladores do app de desktop (Tauri) para Windows, Linux e macOS.
 # Em pushes na main, em PRs que mexem no app e quando disparado à mão, os
 # instaladores ficam como artefatos da execução (aba Actions → execução → Artifacts).
-# Ao enviar uma tag v* (por exemplo v0.5.0), também cria um rascunho de release,
-# que só fica público quando alguém publica pelo GitHub.
+# Ao enviar uma tag v* (por exemplo v0.5.0), publica uma release com os instaladores.
+# Só envie a tag quando quiser publicar.
 on:
   push:
     branches: [main]
@@ -74,9 +74,16 @@ jobs:
           args: ${{ matrix.args }}
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           releaseName: 'Atlas Board ${{ github.ref_name }}'
-          releaseBody: 'Instaladores do app de desktop. No Windows, use o arquivo -setup.exe.'
-          releaseDraft: true
-          prerelease: true
+          releaseBody: |
+            Instaladores do Atlas Board para desktop.
+
+            - **Windows:** baixe o arquivo `_x64-setup.exe`. Como o instalador não tem assinatura digital, o SmartScreen pode avisar na primeira vez: clique em "Mais informações" e depois em "Executar assim mesmo".
+            - **Linux:** `.AppImage`, `.deb` ou `.rpm`.
+            - **macOS:** `.dmg` universal. Abra com o botão direito e escolha Abrir na primeira vez.
+
+            A versão web continua em https://johng-404.github.io/Criador_de_Mapas_RPG/
+          releaseDraft: false
+          prerelease: false
 
       - uses: actions/upload-artifact@v4
         with:

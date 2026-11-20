@@ -1,6 +1,6 @@
 [package]
 name = "atlas-board"
-version = "0.0.1"
+version = "0.5.0"
 description = "Atlas Board: editor de mapas para RPG de mesa"
 edition = "2021"
 publish = false
