@@ -41,6 +41,18 @@ describe('arquivo .rpgmap', () => {
     expect(back.tokens.all()).toEqual(doc.tokens.all());
   });
 
+  it('guarda o tema da parede e ignora temas desconhecidos', () => {
+    const doc = new MapDocument(opts);
+    doc.walls.put('w1', { id: 'w1', a: { x: 0, y: 0 }, b: { x: 64, y: 0 }, kind: 'wall', style: 'tijolo' });
+    doc.walls.put('w2', { id: 'w2', a: { x: 0, y: 32 }, b: { x: 64, y: 32 }, kind: 'wall', style: 'inexistente' });
+    doc.terrain.set(2, 2, 21);
+    doc.terrain.flush();
+    const back = parseMap(docToJson(doc));
+    expect(back.walls.get('w1')?.style).toBe('tijolo');
+    expect(back.walls.get('w2')).not.toHaveProperty('style');
+    expect(back.terrain.get(2, 2)).toBe(21);
+  });
+
   it('dá mensagens claras para arquivos inválidos', () => {
     expect(() => parseMap('não é json')).toThrow('JSON inválido');
     expect(() => parseMap('{"format":"outro"}')).toThrow('não é um mapa');
