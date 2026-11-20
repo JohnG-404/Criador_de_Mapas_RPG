@@ -5,8 +5,17 @@ import type { GridKind } from '../core/grid/GridSystem';
 
 const MAX_SIDE = 1000;
 
-export function NewMapDialog({ onCreate, onCancel }: { onCreate: (o: NewMapOptions) => void; onCancel: () => void }) {
-  const [name, setName] = useState('Mapa sem título');
+const DEFAULT_WARNING = 'O mapa atual será substituído. Use Salvar antes se quiser guardá-lo.';
+
+export function NewMapDialog({ onCreate, onCancel, title = 'Novo mapa', warning = DEFAULT_WARNING, defaultName = 'Mapa sem título' }: {
+  onCreate: (o: NewMapOptions) => void;
+  onCancel: () => void;
+  title?: string;
+  /** Aviso no topo (null = nenhum, ex.: mapa novo dentro da campanha). */
+  warning?: string | null;
+  defaultName?: string;
+}) {
+  const [name, setName] = useState(defaultName);
   const [gridKind, setGridKind] = useState<GridKind>('square');
   const [cols, setCols] = useState(60);
   const [rows, setRows] = useState(40);
@@ -34,8 +43,8 @@ export function NewMapDialog({ onCreate, onCancel }: { onCreate: (o: NewMapOptio
           onCreate({ name: name.trim() || 'Mapa sem título', gridKind, cols: clamp(cols), rows: clamp(rows), fill, cellMeters: 1.5 });
         }}
       >
-        <h2 id="new-map-title">Novo mapa</h2>
-        <p className="warn">O mapa atual será substituído. Use Salvar antes se quiser guardá-lo.</p>
+        <h2 id="new-map-title">{title}</h2>
+        {warning && <p className="warn">{warning}</p>}
         <label>
           Nome
           <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />

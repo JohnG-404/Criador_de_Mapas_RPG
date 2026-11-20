@@ -7,6 +7,7 @@ import { TERRAINS } from '../core/doc/terrain';
 import { LAYERS, MAX_BRUSH, MIN_BRUSH, TOOLS, type Editor, type EditorState, type ToolId } from '../editor/Editor';
 import { OBJECT_TEXTURE_URLS, WALL_TEXTURE_URLS } from '../render/objectTextures';
 import { WALL_STYLES } from '../core/doc/walls';
+import { LinkPanel, MapsPanel } from './CampaignPanel';
 import { TERRAIN_TEXTURE_URLS } from '../render/terrainTextures';
 
 const TOOL_ICONS: Record<ToolId, string> = {
@@ -22,6 +23,7 @@ const TOOL_ICONS: Record<ToolId, string> = {
   fog: 'M4 10h11a3 3 0 1 0-3-3M3 14h15a3 3 0 1 1-3 3M6 18h5',
   ruler: 'M3 17 17 3l4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2',
   note: 'M5 3h10l4 4v14H5zM15 3v4h4M8 11h8M8 15h6',
+  link: 'M3 20h5v-5h5v-5h5V5h3M14 4l4 1-1 4',
   token: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM7.5 17.5c1-2 2.6-3 4.5-3s3.5 1 4.5 3',
 };
 
@@ -149,6 +151,14 @@ export function ToolPanel({ editor, state }: { editor: Editor; state: EditorStat
       )}
       {(tool === 'note' || tool === 'select') && editor.selectedNote() && <NotePanel editor={editor} />}
 
+      {tool === 'link' && !editor.selectedLink() && (
+        <section>
+          <h2>Passagens</h2>
+          <p className="help">Clique numa célula para criar uma passagem (escada, porta, portal) que leva a outro mapa da campanha. Só você vê o marcador.</p>
+        </section>
+      )}
+      {(tool === 'link' || tool === 'select') && editor.selectedLink() && <LinkPanel editor={editor} state={state} />}
+
       {usesBrush || terrainTool ? (
         <section className={usesBrush ? '' : 'dimmed'}>
           <h2>
@@ -235,7 +245,9 @@ export function ToolPanel({ editor, state }: { editor: Editor; state: EditorStat
       )}
       {tool === 'token' && <TokenTemplates editor={editor} state={state} />}
 
-      {tool === 'select' && !editor.selectedNote() && <SelectionPanel editor={editor} state={state} />}
+      {tool === 'select' && !editor.selectedNote() && !editor.selectedLink() && <SelectionPanel editor={editor} state={state} />}
+
+      <MapsPanel editor={editor} state={state} />
 
       <section>
         <h2>Camadas</h2>
@@ -299,7 +311,7 @@ function SelectionPanel({ editor }: { editor: Editor; state: EditorState }) {
     return (
       <section>
         <h2>Seleção</h2>
-        <p className="help">Clique num objeto, token ou nota para selecionar e arraste para mover. Clique numa porta para abrir ou fechar.</p>
+        <p className="help">Clique num objeto, token, nota ou passagem para selecionar e arraste para mover. Clique numa porta para abrir ou fechar.</p>
       </section>
     );
   }

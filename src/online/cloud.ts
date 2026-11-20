@@ -1,5 +1,4 @@
-import type { MapDocument } from '../core/doc/MapDocument';
-import { docToJson, parseMap } from '../core/doc/serialize';
+import { campaignToJson, parseCampaign, type Campaign } from '../core/doc/serialize';
 import { SUPABASE_KEY, SUPABASE_URL } from './config';
 
 /**
@@ -127,13 +126,13 @@ export function setCurrentCloudMap(id: string | null) {
 }
 
 /** Salva o mapa: atualiza o atual, ou cria um novo se não houver (ou se `asNew`). */
-export async function saveToCloud(doc: MapDocument, asNew = false): Promise<CloudMap> {
-  const data = docToJson(doc);
+export async function saveToCloud(c: Campaign, asNew = false): Promise<CloudMap> {
+  const data = campaignToJson(c);
   if (data.length > CLOUD_MAX_CHARS) throw new Error('O mapa passou do limite de 8 MB da nuvem. Use imagens menores.');
   const s = await getStore();
   const cur = asNew ? null : currentCloudMap();
   const token = cur?.token ?? newCloudToken();
-  const name = doc.options.name || 'Mapa';
+  const name = c.maps[0].options.name || 'Mapa';
   const id = await s.save(cur?.id ?? null, token, name, data);
   const m: CloudMap = { id, token, name, savedAt: new Date().toISOString() };
   remember(m);
@@ -142,11 +141,11 @@ export async function saveToCloud(doc: MapDocument, asNew = false): Promise<Clou
 }
 
 /** Abre um mapa da nuvem e passa a tratá-lo como o mapa atual. */
-export async function loadFromCloud(id: string, token: string): Promise<MapDocument> {
+export async function loadFromCloud(id: string, token: string): Promise<Campaign> {
   const s = await getStore();
   const row = await s.load(id, token);
   if (!row) throw new Error('Mapa não encontrado na nuvem. Confira o link.');
-  const doc = parseMap(row.data);
+  const doc = parseCampaign(row.data);
   remember({ id, token, name: row.name, savedAt: listCloudMaps().find((m) => m.id === id)?.savedAt ?? new Date().toISOString() });
   setCurrentCloudMap(id);
   return doc;

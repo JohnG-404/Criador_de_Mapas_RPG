@@ -17,6 +17,9 @@ export class ContentRenderer {
   readonly walls = new Container();
   readonly tokens = new Container();
   readonly notes = new Container();
+  /** Passagens para outros mapas (só o mestre vê). */
+  readonly links = new Container();
+  private linkViews = new Map<string, { root: Container; key: string }>();
   private noteViews = new Map<string, { root: Container; key: string }>();
   private wallGfx = new Graphics();
   private objectTextures = new Map<string, Texture>();
@@ -67,7 +70,9 @@ export class ContentRenderer {
     this.syncObjects();
     this.syncTokens();
     this.syncNotes();
+    this.syncLinks();
     this.unsub.push(this.doc.notes.onChange(() => { this.syncNotes(); this.onChange?.(); }));
+    this.unsub.push(this.doc.links.onChange(() => { this.syncLinks(); this.onChange?.(); }));
     this.unsub.push(this.doc.walls.onChange(() => { this.drawWalls(); this.onChange?.(); }));
     this.unsub.push(this.doc.objects.onChange(() => { this.syncObjects(); this.onChange?.(); }));
     this.unsub.push(this.doc.assets.onChange(() => this.loadCustomAssets()));
@@ -81,6 +86,7 @@ export class ContentRenderer {
     this.walls.destroy({ children: true });
     this.tokens.destroy({ children: true });
     this.notes.destroy({ children: true });
+    this.links.destroy({ children: true });
   }
 
   /** Decodifica as imagens importadas pelo usuário e cria as texturas. */
@@ -99,6 +105,48 @@ export class ContentRenderer {
         this.syncObjects();
         this.onChange?.();
       }).catch(() => this.loadingCustom.delete(a.id));
+    }
+  }
+
+  // ---- passagens para outros mapas
+  private syncLinks() {
+    const seen = new Set<string>();
+    const cell = this.doc.grid.cellSize;
+    for (const l of this.doc.links.all()) {
+      seen.add(l.id);
+      const key = JSON.stringify(l);
+      const existing = this.linkViews.get(l.id);
+      if (existing?.key === key) continue;
+      existing?.root.destroy({ children: true });
+      const root = new Container();
+      root.position.set(l.x, l.y);
+      const r = cell * 0.36;
+      const color = l.target ? 0x2a8f86 : 0x8a8f99;
+      const g = new Graphics();
+      g.circle(1.5, 2, r).fill({ color: 0x000000, alpha: 0.35 });
+      g.circle(0, 0, r).fill(color).stroke({ width: 1.5, color: 0xffffff, alpha: 0.9 });
+      // degraus descendo para a direita, com uma seta: "leva a outro lugar"
+      const s = r * 0.5;
+      g.moveTo(-s * 1.1, -s * 0.9).lineTo(-s * 0.4, -s * 0.9).lineTo(-s * 0.4, -s * 0.2).lineTo(s * 0.3, -s * 0.2).lineTo(s * 0.3, s * 0.5).lineTo(s * 1.1, s * 0.5);
+      g.moveTo(-s * 0.9, s * 0.95).lineTo(s * 0.2, s * 0.95).moveTo(-0.1 * s, s * 0.65).lineTo(s * 0.2, s * 0.95).lineTo(-0.1 * s, s * 1.25);
+      g.stroke({ width: Math.max(1, cell * 0.05), color: 0xffffff, cap: 'round', join: 'round' });
+      root.addChild(g);
+      const text = l.label.trim() || (l.target ? 'Passagem' : 'Passagem sem destino');
+      const label = new Text({
+        text: text.length > 28 ? text.slice(0, 27) + '…' : text,
+        resolution: 4,
+        style: { fontFamily: 'system-ui, sans-serif', fontWeight: '600', fontSize: Math.max(7, cell * 0.26), fill: 0xd9fff9, stroke: { color: 0x000000, width: 3, join: 'round' } },
+      });
+      label.anchor.set(0.5, 0);
+      label.position.set(0, r + 2);
+      root.addChild(label);
+      this.links.addChild(root);
+      this.linkViews.set(l.id, { root, key });
+    }
+    for (const [id, v] of this.linkViews) {
+      if (seen.has(id)) continue;
+      v.root.destroy({ children: true });
+      this.linkViews.delete(id);
     }
   }
 
