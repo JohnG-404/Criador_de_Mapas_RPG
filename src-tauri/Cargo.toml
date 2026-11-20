@@ -1,0 +1,26 @@
+[package]
+name = "atlas-board"
+version = "0.0.1"
+description = "Atlas Board: editor de mapas para RPG de mesa"
+edition = "2021"
+publish = false
+
+[lib]
+name = "atlas_board_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+serde = { version = "1", features = ["derive"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

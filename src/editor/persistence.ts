@@ -1,5 +1,6 @@
 import type { MapDocument } from '../core/doc/MapDocument';
 import { docToJson, mapFileName, MAP_EXTENSION, parseMap } from '../core/doc/serialize';
+import { desktopSaveBlob, isDesktop } from '../desktop';
 import type { Editor } from './Editor';
 
 const AUTOSAVE_KEY = 'atlas-board:autosave';
@@ -58,6 +59,7 @@ interface SaveFilePicker {
 
 /** Baixa um arquivo (ou abre o "Salvar como" do sistema, onde o navegador permite). */
 export async function saveBlob(blob: Blob, name: string, type: { description: string; accept: Record<string, string[]> }) {
+  if (isDesktop()) return desktopSaveBlob(blob, name, type);
   const w = window as unknown as SaveFilePicker;
   if (w.showSaveFilePicker) {
     try {
