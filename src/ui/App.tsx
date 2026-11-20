@@ -9,6 +9,8 @@ import { MapView } from '../render/MapView';
 import type { GeneratorKind } from '../core/procgen';
 import { ExportDialog } from './ExportDialog';
 import { OnlineDialog } from './OnlineDialog';
+import { CloudDialog } from './CloudDialog';
+import { cloudRefFromUrl, loadFromCloud, setCurrentCloudMap } from '../online/cloud';
 import { newRoomCode } from '../online/protocol';
 import type { HostedRoom } from '../online/room';
 import { GenerateDialog } from './GenerateDialog';
@@ -35,6 +37,8 @@ export function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const [show3d, setShow3d] = useState(false);
   const [onlineOpen, setOnlineOpen] = useState(false);
+  const [cloudOpen, setCloudOpen] = useState(false);
+  const closeCloud = useCallback(() => setCloudOpen(false), []);
   const [room, setRoom] = useState<{ code: string; peers: number; status: 'connecting' | 'online' | 'error' } | null>(null);
   const roomRef = useRef<HostedRoom | null>(null);
   const closeOnline = useCallback(() => setOnlineOpen(false), []);
@@ -59,7 +63,7 @@ export function App() {
   useEffect(() => () => roomRef.current?.stop(), []);
   const close3d = useCallback(() => setShow3d(false), []);
   const [lastGen, setLastGen] = useState<{ kind: GeneratorKind; seed: string } | null>(null);
-  const dialogOpen = newMapOpen || genOpen || exportOpen || onlineOpen;
+  const dialogOpen = newMapOpen || genOpen || exportOpen || onlineOpen || cloudOpen;
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const broadcastRef = useRef<ReturnType<typeof startPlayerBroadcast> | null>(null);
@@ -93,6 +97,16 @@ export function App() {
   }, [editor, notify]);
 
   const open = useCallback(() => fileRef.current?.click(), []);
+
+  // Link de mapa na nuvem (?mapa=id#chave): abre o mapa e limpa o endereço.
+  useEffect(() => {
+    const ref = cloudRefFromUrl();
+    if (!ref) return;
+    history.replaceState(null, '', location.pathname);
+    loadFromCloud(ref.id, ref.token)
+      .then((doc) => { editor.loadDocument(doc); notify(`Aberto da nuvem: ${doc.options.name}`); })
+      .catch((e: Error) => notify(e.message || 'Não foi possível abrir o mapa da nuvem.', true));
+  }, [editor, notify]);
 
 
   const openPlayerWindow = () => {
@@ -142,6 +156,7 @@ export function App() {
           <button onClick={() => setGenOpen(true)} title="Gerar masmorra, caverna ou região a partir de uma semente">Gerar</button>
           <button onClick={open} title="Abrir arquivo .rpgmap (Ctrl+O)">Abrir</button>
           <button onClick={() => void save()} title="Salvar arquivo .rpgmap (Ctrl+S)">Salvar</button>
+          <button onClick={() => setCloudOpen(true)} title="Salvar e abrir mapas na nuvem, para continuar em outro computador">Nuvem</button>
           <button onClick={() => setExportOpen(true)} title="Imagem PNG, arquivo para mesa virtual ou PDF para imprimir">Exportar</button>
           <input
             ref={fileRef}
@@ -155,6 +170,7 @@ export function App() {
               if (!file) return;
               try {
                 editor.loadDocument(await readMapFile(file));
+                setCurrentCloudMap(null);
                 notify(`Aberto: ${file.name}`);
               } catch (err) {
                 notify((err as Error).message || 'Não foi possível abrir o arquivo.', true);
@@ -246,6 +262,14 @@ export function App() {
           onDone={(msg, error) => { setExportOpen(false); notify(msg, error); }}
         />
       )}
+      {cloudOpen && (
+        <CloudDialog
+          doc={doc}
+          notify={notify}
+          onClose={closeCloud}
+          onOpened={(d, name) => { editor.loadDocument(d); setCloudOpen(false); notify(`Aberto da nuvem: ${name}`); }}
+        />
+      )}
       {onlineOpen && (
         <OnlineDialog
           code={room?.code ?? null}
@@ -274,6 +298,7 @@ export function App() {
           onCancel={() => setNewMapOpen(false)}
           onCreate={(o) => {
             editor.newMap(o);
+            setCurrentCloudMap(null);
             setNewMapOpen(false);
           }}
         />
