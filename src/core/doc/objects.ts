@@ -46,7 +46,7 @@ export interface ObjectAsset {
   h: number;
 }
 
-/** Catálogo do estilo realista diurno (arte do SpriteCook). As imagens ficam em render/objectTextures.ts. */
+/** Catálogo do estilo realista diurno (SpriteCook + Poly Haven/Blender). As imagens ficam em render/objectTextures.ts. */
 export const OBJECT_ASSETS: readonly ObjectAsset[] = [
   { key: 'arvore', name: 'Árvore', w: 2.6, h: 2.4 },
   { key: 'arbusto', name: 'Arbusto', w: 1.3, h: 1.24 },
@@ -56,6 +56,15 @@ export const OBJECT_ASSETS: readonly ObjectAsset[] = [
   { key: 'mesa', name: 'Mesa', w: 2.6, h: 1.6 },
   { key: 'tapete', name: 'Tapete', w: 3, h: 2.38 },
   { key: 'tocha', name: 'Tocha', w: 0.4, h: 1.25 },
+  // Modelos CC0 do Poly Haven renderizados no Blender.
+  { key: 'caixote', name: 'Caixote', w: 1.2, h: 0.6 },
+  { key: 'caixote-longo', name: 'Caixote longo', w: 1.6, h: 0.68 },
+  { key: 'bau-ferro', name: 'Baú de ferro', w: 1.3, h: 0.71 },
+  { key: 'pedregulho', name: 'Pedregulho', w: 1, h: 1.43 },
+  { key: 'pedra', name: 'Pedra', w: 0.7, h: 1.05 },
+  { key: 'tronco', name: 'Tronco caído', w: 2.6, h: 0.25 },
+  { key: 'mesa-redonda', name: 'Mesa redonda', w: 1.4, h: 1.4 },
+  { key: 'mesa-piquenique', name: 'Mesa de piquenique', w: 2.4, h: 1.78 },
 ];
 
 export function objectAsset(key: string) {
