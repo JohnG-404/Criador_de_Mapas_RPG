@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
 import type { DieTerm } from '../../core/dice/dice';
 import { loadDice3d, type DiceTable, type Mode3d } from '../../table/DiceTable';
 import { playerColor, SKIN_NAMES, type Rolagem } from '../../table/rolls';
@@ -23,12 +23,14 @@ export function DicePanel({ dice }: { dice: DiceTable }) {
   const gm = dice.papel === 'mestre';
   const needsName = !gm && !dice.name;
 
-  // Aquece o three.js enquanto a pessoa olha o painel, para a 1ª rolagem não engasgar.
-  useEffect(() => {
-    if (dice.mode === 'desligado') return;
-    const t = window.setTimeout(() => void loadDice3d().then((m) => m?.preaquecer(dice.effectiveSkin, dice.papel, gm ? 'mestre' : dice.color)), 400);
-    return () => window.clearTimeout(t);
-  }, [dice, dice.mode, dice.effectiveSkin, gm, dice.color]);
+  // Aquece o dado 3D no primeiro toque no painel (não ao abrir: um contexto WebGL
+  // a mais só para quem vai rolar), para a 1ª rolagem não engasgar.
+  const warm = useRef(false);
+  const warmUp = () => {
+    if (warm.current || dice.mode === 'desligado') return;
+    warm.current = true;
+    void loadDice3d().then((m) => m?.preaquecer(dice.effectiveSkin, dice.papel, gm ? 'mestre' : dice.color));
+  };
 
   const modText = mod === 0 ? '' : mod > 0 ? `+${mod}` : `${mod}`;
   const roll = (e: string) => {
@@ -47,7 +49,7 @@ export function DicePanel({ dice }: { dice: DiceTable }) {
   const history = [...dice.log.all()].sort((a, b) => (b.horaRevelada ?? b.hora) - (a.horaRevelada ?? a.hora));
 
   return (
-    <div className="dice-panel">
+    <div className="dice-panel" onPointerDown={warmUp}>
       {needsName || !gm ? (
         <label className="dice-name">
           <span>Seu nome</span>
