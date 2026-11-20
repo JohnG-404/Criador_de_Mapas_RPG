@@ -21,6 +21,9 @@ import { ToolPanel } from './ToolPanel';
 import { useShortcuts } from './useShortcuts';
 import { AccessibilityDialog } from './a11y/AccessibilityDialog';
 import { UiIcon } from './icons';
+import { DiceTable } from '../table/DiceTable';
+import { DiceFlash, TableDock, type DockTab } from './table/TableDock';
+import { SheetDialog } from './SheetDialog';
 
 const View3DPanel = lazy(() => import('./View3DPanel').then((m) => ({ default: m.View3DPanel })));
 
@@ -34,6 +37,10 @@ export function App() {
     return ed;
   });
   const state = useSyncExternalStore(editor.subscribe, editor.getState);
+  const [dice] = useState(() => new DiceTable('mestre'));
+  const [dock, setDock] = useState<DockTab | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const closeSheet = useCallback(() => setSheetOpen(false), []);
   const [hover, setHover] = useState<Cell | null>(null);
   const [zoom, setZoom] = useState(1);
   const [newMapOpen, setNewMapOpen] = useState(false);
@@ -56,11 +63,11 @@ export function App() {
       roomRef.current = await hostRoom(editor, code, {
         onPeers: (peers) => setRoom((r) => (r && r.code === code ? { ...r, peers } : r)),
         onStatus: (status) => setRoom((r) => (r && r.code === code ? { ...r, status } : r)),
-      });
+      }, dice);
     } catch {
       setRoom((r) => (r ? { ...r, status: 'error' } : r));
     }
-  }, [editor]);
+  }, [editor, dice]);
   const stopRoom = useCallback(() => {
     roomRef.current?.stop();
     roomRef.current = null;
@@ -89,10 +96,10 @@ export function App() {
         notify('Não foi possível salvar automaticamente no navegador. Use Salvar para guardar o arquivo.', true);
       }
     });
-    const broadcast = startPlayerBroadcast(editor);
+    const broadcast = startPlayerBroadcast(editor, dice);
     broadcastRef.current = broadcast;
     return () => { stopAutosave(); broadcast.stop(); broadcastRef.current = null; };
-  }, [editor, notify]);
+  }, [editor, notify, dice]);
 
   const save = useCallback(async () => {
     try {
@@ -240,6 +247,14 @@ export function App() {
             <UiIcon name="portal" />{room ? `Sala online · ${room.peers}` : 'Sala online'}
           </button>
           <button
+            onClick={() => setDock((d) => (d ? null : 'dados'))}
+            aria-pressed={!!dock}
+            className={dock ? 'active' : ''}
+            title="Rolador de dados e ordem de iniciativa (as rolagens aparecem para a mesa)"
+          >
+            Mesa
+          </button>
+          <button
             onClick={() => setShow3d((v) => !v)}
             aria-pressed={show3d}
             className={show3d ? 'active' : ''}
@@ -263,9 +278,21 @@ export function App() {
         </div>
       </header>
       <div className="workspace">
-        <ToolPanel editor={editor} state={state} />
+        <ToolPanel editor={editor} state={state} onOpenSheet={() => setSheetOpen(true)} />
         <div className="stage-area">
           <main className="stage" ref={hostRef} />
+          {dock && (
+            <TableDock
+              editor={editor}
+              docVersion={state.docVersion}
+              dice={dice}
+              gm
+              tab={dock}
+              onTab={setDock}
+              onClose={() => setDock(null)}
+              onFocus={(t) => viewRef.current?.centerOn(t)}
+            />
+          )}
           {show3d && viewRef.current && (
             <Suspense fallback={null}>
               <View3DPanel editor={editor} view={viewRef.current} showGrid={state.showGrid} docVersion={state.docVersion} onClose={close3d} />
@@ -286,6 +313,8 @@ export function App() {
         </span>
         <span className="hint">Botão direito ou Espaço + arrastar move o mapa · roda do mouse dá zoom</span>
       </footer>
+      <DiceFlash dice={dice} />
+      {sheetOpen && <SheetDialog editor={editor} dice={dice} onClose={closeSheet} notify={notify} />}
       {notice && (
         <div className={`notice${notice.error ? ' error' : ''}`} role={notice.error ? 'alert' : 'status'} data-testid="notice">
           {notice.text}

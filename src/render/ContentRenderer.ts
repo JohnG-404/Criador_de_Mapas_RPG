@@ -28,6 +28,8 @@ export class ContentRenderer {
   private objectSprites = new Map<string, { sprite: Sprite; shadow: Sprite | null; key: string }>();
   private tokenViews = new Map<string, { root: Container; key: string }>();
   private unsub: Array<() => void> = [];
+  /** Anel dourado sob o token da vez na iniciativa. */
+  private turnRing = new Graphics();
   onChange: (() => void) | null = null;
 
   /** Na janela dos jogadores, só os personagens de jogador mostram a barra de PV. */
@@ -78,6 +80,7 @@ export class ContentRenderer {
     this.unsub.push(this.doc.assets.onChange(() => this.loadCustomAssets()));
     this.loadCustomAssets();
     this.unsub.push(this.doc.tokens.onChange(() => { this.syncTokens(); this.onChange?.(); }));
+    this.unsub.push(this.doc.initiative.onChange(() => { this.drawTurnRing(); this.onChange?.(); }));
   }
 
   destroy() {
@@ -349,6 +352,19 @@ export class ContentRenderer {
       v.root.destroy({ children: true });
       this.tokenViews.delete(id);
     }
+    this.drawTurnRing();
+  }
+
+  private drawTurnRing() {
+    const g = this.turnRing;
+    g.clear();
+    if (g.parent !== this.tokens) this.tokens.addChildAt(g, 0);
+    const ini = this.doc.initiative.get();
+    const t = ini.entries.length > 1 || ini.round > 1 ? this.doc.tokens.get(ini.entries[ini.turn]?.id ?? '') : undefined;
+    if (!t) return;
+    const r = (t.size * this.doc.grid.cellSize) / 2 * 0.9;
+    g.circle(t.x, t.y, r + 5).stroke({ color: 0x000000, width: 5, alpha: 0.5 });
+    g.circle(t.x, t.y, r + 5).stroke({ color: 0xf2c14e, width: 3 });
   }
 
   private buildToken(t: Token) {
