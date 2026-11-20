@@ -4,6 +4,8 @@
  * Valem para o editor e para a janela dos jogadores (mesmo navegador).
  */
 
+import { applyLayout } from '../layout';
+
 export type FontChoice = 'tematica' | 'simples' | 'legivel';
 export type ContrastChoice = 'normal' | 'alto';
 export type MotionChoice = 'sistema' | 'reduzir' | 'normal';
@@ -106,6 +108,7 @@ export function applyA11y(root: HTMLElement = document.documentElement) {
   root.dataset.colorVision = s.colorVision;
   root.dataset.focus = s.strongFocus ? 'forte' : 'normal';
   root.style.setProperty('--ui-scale', String(s.uiScale));
+  if (root === document.documentElement) applyLayout(root);
   ensureColorFilters();
 }
 
