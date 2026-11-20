@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { TERRAINS } from '../core/doc/terrain';
 import { TOOLS, type Editor } from '../editor/Editor';
+import { getA11y } from './a11y/settings';
 
 /** Atalhos de teclado do editor (ferramentas, terrenos, pincel, seleção e histórico). */
 export function useShortcuts(editor: Editor, enabled: boolean) {
@@ -20,6 +21,12 @@ export function useShortcuts(editor: Editor, enabled: boolean) {
         return;
       }
       if (e.altKey) return;
+      // Acessibilidade: atalhos de uma tecla podem ser desligados (WCAG 2.1.4).
+      if (!getA11y().letterShortcuts) {
+        if (e.key === 'Escape') { editor.clearRuler(); if (editor.getState().selection) editor.clearSelection(); }
+        else if ((e.key === 'Delete' || e.key === 'Backspace') && editor.getState().selection) { editor.deleteSelection(); e.preventDefault(); }
+        return;
+      }
       const tool = TOOLS.find((x) => x.key === key);
       if (tool) { editor.setTool(tool.id); e.preventDefault(); return; }
       const n = Number(e.key);

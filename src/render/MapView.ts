@@ -1,4 +1,5 @@
 import { Application, Container, Graphics, Rectangle, Text } from 'pixi.js';
+import { getA11y } from '../ui/a11y/settings';
 import { Camera } from '../core/camera/Camera';
 import type { MapDocument } from '../core/doc/MapDocument';
 import { objectAsset } from '../core/doc/objects';
@@ -652,6 +653,7 @@ export class MapView {
     on(window, 'keydown', (e) => {
       if (isTypingTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
       const pan = 64;
+      if (!getA11y().letterShortcuts && ['+', '=', '-', '_', '0'].includes(e.key)) return;
       switch (e.key) {
         case '+': case '=': this.zoomIn(); break;
         case '-': case '_': this.zoomOut(); break;
