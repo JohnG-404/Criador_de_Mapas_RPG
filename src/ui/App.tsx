@@ -252,7 +252,7 @@ export function App() {
             className={dock ? 'active' : ''}
             title="Rolador de dados e ordem de iniciativa (as rolagens aparecem para a mesa)"
           >
-            Mesa
+            <UiIcon name="dice" />Mesa
           </button>
           <button
             onClick={() => setShow3d((v) => !v)}

@@ -251,14 +251,14 @@ html, body, #root { margin: 0; height: 100%; }
 .dock-body h3 { margin: 14px 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .dock-body .help { margin: 4px 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
 .dock-body button, .sheet-dialog button {
-  font: inherit; color: var(--text); background: #2b303c; border: 1px solid var(--panel-border); border-radius: 6px; cursor: pointer; padding: 6px 8px;
+  font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--panel-border); border-radius: 6px; cursor: pointer; padding: 6px 8px;
 }
 .dock-body button:hover:not(:disabled), .sheet-dialog button:hover:not(:disabled) { border-color: #5a6274; }
 .dock-body button:disabled, .sheet-dialog button:disabled { opacity: .45; cursor: default; }
 .dock-body button.primary, .sheet-dialog button.primary { background: var(--accent); color: #1b1e26; border-color: var(--accent); font-weight: 600; }
 .dock-body button:focus-visible, .dock-body input:focus-visible, .sheet-dialog :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .dock-body input, .sheet-dialog input, .sheet-dialog select, .sheet-dialog textarea {
-  font: inherit; color: var(--text); background: #1e222b; border: 1px solid var(--panel-border); border-radius: 6px; padding: 6px 8px; min-width: 0;
+  font: inherit; color: var(--text); background: var(--input-bg); border: 1px solid var(--panel-border); border-radius: 6px; padding: 6px 8px; min-width: 0;
 }
 .dock-open {
   position: absolute; right: 12px; top: 12px; z-index: 6; font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 8px; cursor: pointer;
@@ -271,7 +271,7 @@ html, body, #root { margin: 0; height: 100%; }
 .stepper > span { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
 .stepper > div { display: grid; grid-template-columns: 30px 1fr 30px; border: 1px solid var(--panel-border); border-radius: 8px; overflow: hidden; }
 .dock-body .stepper button { border: 0; border-radius: 0; padding: 5px 0; font-size: 15px; }
-.stepper .stepper-value { display: grid; place-items: center; font-weight: 700; font-variant-numeric: tabular-nums; background: #1e222b; }
+.stepper .stepper-value { display: grid; place-items: center; font-weight: 700; font-variant-numeric: tabular-nums; background: var(--input-bg); }
 .dice-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .dock-body .dice-buttons button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px 5px; color: #d9cfb8; font-weight: 700; }
 .dice-buttons button:hover { color: var(--accent); }
@@ -301,7 +301,7 @@ html, body, #root { margin: 0; height: 100%; }
 .roll-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .roll {
   display: grid; grid-template-columns: 30px 1fr auto; gap: 1px 8px; align-items: center;
-  padding: 7px 9px; border-radius: 8px; background: #1e222b; border: 1px solid var(--panel-border); border-left: 3px solid var(--cor-jogador);
+  padding: 7px 9px; border-radius: 8px; background: var(--input-bg); border: 1px solid var(--panel-border); border-left: 3px solid var(--cor-jogador);
 }
 .roll-icon { grid-row: 1 / span 2; width: 28px; height: 28px; color: var(--cor-jogador); filter: brightness(1.5); }
 .roll-head { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; min-width: 0; font-size: 12px; }
@@ -320,7 +320,7 @@ html, body, #root { margin: 0; height: 100%; }
 .roll-detail .min { color: #ff8a80; font-weight: 700; }
 .roll-actions { grid-column: 2 / -1; margin-top: 4px; }
 .dock-body .roll-actions button { font-size: 12px; padding: 3px 8px; color: var(--accent); border-color: #8a6418; background: transparent; }
-.roll.hidden-roll { background: repeating-linear-gradient(135deg, #1e222b 0 8px, #241f26 8px 16px); }
+.roll.hidden-roll { background: repeating-linear-gradient(135deg, var(--input-bg) 0 8px, var(--panel) 8px 16px); }
 .roll.critico { border-color: #c99a3b; }
 .roll.critico .roll-total { color: #ecc76f; text-shadow: 0 0 12px rgba(236, 199, 111, .6); }
 .roll.falha .roll-total { color: #ff8a80; }
@@ -332,8 +332,8 @@ html, body, #root { margin: 0; height: 100%; }
 .ini-head b { color: var(--accent); }
 .ini-turns { display: grid !important; grid-template-columns: 1fr 1fr; }
 .ini-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.ini-row { display: grid; grid-template-columns: 32px 1fr 52px auto auto; gap: 6px; align-items: center; padding: 5px 6px; border-radius: 8px; background: #1e222b; border: 1px solid var(--panel-border); }
-.ini-row.active { border-color: var(--accent); background: #3a3426; box-shadow: inset 3px 0 0 var(--accent); }
+.ini-row { display: grid; grid-template-columns: 32px 1fr 52px auto auto; gap: 6px; align-items: center; padding: 5px 6px; border-radius: 8px; background: var(--input-bg); border: 1px solid var(--panel-border); }
+.ini-row.active { border-color: var(--accent); background: var(--sel-bot); box-shadow: inset 3px 0 0 var(--accent); }
 .ini-row.down { opacity: .55; }
 .token-thumb { width: 32px; height: 32px; border-radius: 50%; border: 2px solid; object-fit: cover; display: grid; place-items: center; font-weight: 700; color: #fff; background: #2b3324; flex: none; }
 span.token-thumb { border-color: #0006; }
@@ -346,11 +346,11 @@ span.ini-value { font-weight: 700; text-align: center; font-size: 16px; grid-col
 .dock-body button.icon, .sheet-dialog button.icon { padding: 3px 6px; background: transparent; border-color: transparent; }
 .ini-actions { display: flex; flex-direction: column; gap: 6px; }
 .dock-body .danger-text, .sheet-dialog .danger-text { color: #e07a6f; background: transparent; }
-.cond-chip { font-size: 10.5px; padding: 1px 6px; border-radius: 99px; background: #2b303c; border: 1px solid var(--panel-border); color: var(--muted); }
+.cond-chip { font-size: 10.5px; padding: 1px 6px; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--panel-border); color: var(--muted); }
 .cond-chip.on { background: #4a2a2e; border-color: #a5484d; color: #ffd5d6; }
 .cond-list { display: flex; flex-wrap: wrap; gap: 4px; }
 .sheet-dialog .cond-list .cond-chip { font-size: 12px; padding: 3px 9px; border-radius: 99px; }
-.panel .open-sheet { background: #3a3426; border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; padding: 6px; font-size: 13px; cursor: pointer; }
+.panel .open-sheet { background: var(--sel-bot); border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; padding: 6px; font-size: 13px; cursor: pointer; }
 
 .sheet-overlay { position: fixed; inset: 0; z-index: 30; background: #0008; display: grid; place-items: center; padding: 16px; }
 .sheet-dialog {
@@ -374,12 +374,12 @@ span.ini-value { font-weight: 700; text-align: center; font-size: 16px; grid-col
 .sheet-dialog .roll-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .attr-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .attr-grid.n5 { grid-template-columns: repeat(5, 1fr); }
-.attr { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 6px; background: #1e222b; border: 1px solid var(--panel-border); border-radius: 8px; text-align: center; }
+.attr { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 6px; background: var(--input-bg); border: 1px solid var(--panel-border); border-radius: 8px; text-align: center; }
 .attr-short { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--accent); }
 .attr input { text-align: center; font-size: 16px; font-weight: 700; padding: 3px; width: 100%; }
 .sheet-dialog .attr .roll-btn { padding: 3px 4px; font-weight: 700; }
 .save-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.save { display: flex; justify-content: space-between; align-items: center; gap: 4px; padding: 3px 4px 3px 6px; background: #1e222b; border: 1px solid var(--panel-border); border-radius: 8px; }
+.save { display: flex; justify-content: space-between; align-items: center; gap: 4px; padding: 3px 4px 3px 6px; background: var(--input-bg); border: 1px solid var(--panel-border); border-radius: 8px; }
 .save label { display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; }
 .save input { accent-color: var(--accent); }
 .sheet-dialog .save .roll-btn { padding: 2px 6px; }
@@ -391,7 +391,7 @@ span.ini-value { font-weight: 700; text-align: center; font-size: 16px; grid-col
 .sheet-dialog .skill-list select { padding: 3px 4px; font-size: 12px; }
 .sheet-dialog .skill-list .roll-btn { padding: 3px 4px; font-size: 12px; }
 .attacks { display: flex; flex-direction: column; gap: 8px; }
-.attack { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 6px; background: #1e222b; border: 1px solid var(--panel-border); border-radius: 8px; }
+.attack { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 6px; background: var(--input-bg); border: 1px solid var(--panel-border); border-radius: 8px; }
 .attack .atk-name { grid-column: 1 / -1; font-weight: 600; }
 .attack input.bad { border-color: #e5484d; }
 .atk-buttons { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr auto; gap: 4px; }
