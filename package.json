@@ -12,6 +12,7 @@
     "test:e2e": "playwright test --trace off"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.81.1",
     "pixi.js": "^8.23.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

@@ -56,4 +56,8 @@ export function listenToGm(onMap: (map: MapFile) => void, onView?: (rect: ViewRe
 }
 
 export const PLAYER_QUERY = 'jogador';
-export const isPlayerWindow = () => new URLSearchParams(location.search).has(PLAYER_QUERY);
+export const ROOM_QUERY = 'sala';
+export const isPlayerWindow = () => {
+  const q = new URLSearchParams(location.search);
+  return q.has(PLAYER_QUERY) || q.has(ROOM_QUERY);
+};

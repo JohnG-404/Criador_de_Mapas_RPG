@@ -8,6 +8,9 @@ import { PLAYER_QUERY, startPlayerBroadcast } from '../editor/playerSync';
 import { MapView } from '../render/MapView';
 import type { GeneratorKind } from '../core/procgen';
 import { ExportDialog } from './ExportDialog';
+import { OnlineDialog } from './OnlineDialog';
+import { newRoomCode } from '../online/protocol';
+import type { HostedRoom } from '../online/room';
 import { GenerateDialog } from './GenerateDialog';
 import { NewMapDialog } from './NewMapDialog';
 import { ToolPanel } from './ToolPanel';
@@ -31,9 +34,32 @@ export function App() {
   const [genOpen, setGenOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [show3d, setShow3d] = useState(false);
+  const [onlineOpen, setOnlineOpen] = useState(false);
+  const [room, setRoom] = useState<{ code: string; peers: number; status: 'connecting' | 'online' | 'error' } | null>(null);
+  const roomRef = useRef<HostedRoom | null>(null);
+  const closeOnline = useCallback(() => setOnlineOpen(false), []);
+  const openRoom = useCallback(async () => {
+    const code = newRoomCode();
+    setRoom({ code, peers: 0, status: 'connecting' });
+    try {
+      const { hostRoom } = await import('../online/room');
+      roomRef.current = await hostRoom(editor, code, {
+        onPeers: (peers) => setRoom((r) => (r && r.code === code ? { ...r, peers } : r)),
+        onStatus: (status) => setRoom((r) => (r && r.code === code ? { ...r, status } : r)),
+      });
+    } catch {
+      setRoom((r) => (r ? { ...r, status: 'error' } : r));
+    }
+  }, [editor]);
+  const stopRoom = useCallback(() => {
+    roomRef.current?.stop();
+    roomRef.current = null;
+    setRoom(null);
+  }, []);
+  useEffect(() => () => roomRef.current?.stop(), []);
   const close3d = useCallback(() => setShow3d(false), []);
   const [lastGen, setLastGen] = useState<{ kind: GeneratorKind; seed: string } | null>(null);
-  const dialogOpen = newMapOpen || genOpen || exportOpen;
+  const dialogOpen = newMapOpen || genOpen || exportOpen || onlineOpen;
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const broadcastRef = useRef<ReturnType<typeof startPlayerBroadcast> | null>(null);
@@ -153,12 +179,20 @@ export function App() {
               const rect = viewRef.current?.visibleRect();
               if (rect && broadcastRef.current) {
                 broadcastRef.current.showView(rect);
+                roomRef.current?.showView(rect);
                 notify('Os jogadores agora veem esta área');
               }
             }}
             title="A janela dos jogadores passa a mostrar exatamente a área que você está vendo"
           >
             Mostrar esta área
+          </button>
+          <button
+            onClick={() => setOnlineOpen(true)}
+            className={room ? 'active' : ''}
+            title="Sala online: os jogadores abrem um link e veem o mapa ao vivo"
+          >
+            {room ? `Sala online · ${room.peers}` : 'Sala online'}
           </button>
           <button
             onClick={() => setShow3d((v) => !v)}
@@ -210,6 +244,16 @@ export function App() {
           showGrid={state.showGrid}
           onCancel={() => setExportOpen(false)}
           onDone={(msg, error) => { setExportOpen(false); notify(msg, error); }}
+        />
+      )}
+      {onlineOpen && (
+        <OnlineDialog
+          code={room?.code ?? null}
+          peers={room?.peers ?? 0}
+          status={room?.status ?? null}
+          onOpen={() => void openRoom()}
+          onStop={stopRoom}
+          onClose={closeOnline}
         />
       )}
       {genOpen && (

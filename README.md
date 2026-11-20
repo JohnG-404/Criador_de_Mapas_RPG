@@ -39,6 +39,7 @@ npm run build      # gera a versão final em dist/
 | Exportar | Botão **Exportar**: imagem PNG, arquivo de mesa virtual `.dd2vtt` (Universal VTT, com paredes, portas e luzes, abre no Foundry, Roll20, Owlbear Rodeo e outros) ou PDF em escala real dividido em folhas A4 (imprima em 100%) |
 | Relevo | Ferramenta Relevo (`L`): subir, baixar, aplainar e suavizar com o pincel (`Alt` inverte subir e baixar). Aparece sombreado no 2D e com altura de verdade no 3D |
 | Modelos de token | Ferramenta Token (`T`): personagens e inimigos prontos de D&D 5e (criaturas do SRD 5.1) e de horror investigativo, com retrato, tamanho e ficha (PV, CA ou Defesa, Sanidade). Dano e cura rápidos no painel |
+| Sala online | Botão **Sala online**: abre uma sala e gera um link. Os jogadores abrem o link em qualquer computador ou celular e veem o mapa ao vivo, com a névoa opaca. Notas do mestre e inimigos escondidos pela névoa não são enviados. Usa o Realtime do Supabase |
 | Ver em 3D | Botão **Ver em 3D**: paredes com altura (baixa, média ou alta), portas, objetos em volume, água afundada e tokens como miniaturas. Arraste para girar, botão direito move, roda aproxima. `Esc` ou **Voltar ao 2D** fecha |
 | Imagem própria | Ferramenta Objeto (`O`) e **Importar imagem…** (PNG, WebP ou JPEG). A imagem fica guardada dentro do arquivo `.rpgmap` |
 | Enquadrar os jogadores | Mostrar esta área: a janela dos jogadores passa a mostrar o que você está vendo |

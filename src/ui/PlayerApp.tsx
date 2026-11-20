@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { parseMap } from '../core/doc/serialize';
 import { Editor } from '../editor/Editor';
-import { listenToGm } from '../editor/playerSync';
+import { listenToGm, ROOM_QUERY } from '../editor/playerSync';
+import { joinRoom } from '../online/room';
+import { validRoomCode } from '../online/protocol';
 import { MapView } from '../render/MapView';
 
 /**
@@ -12,35 +14,42 @@ export function PlayerApp() {
   const hostRef = useRef<HTMLDivElement>(null);
   const [editor] = useState(() => new Editor());
   const [connected, setConnected] = useState(false);
+  const [room] = useState(() => new URLSearchParams(location.search).get(ROOM_QUERY));
+  const [status, setStatus] = useState<'connecting' | 'online' | 'error'>('connecting');
 
   useEffect(() => {
     document.title = 'Atlas Board · Jogadores';
     const view = new MapView(editor, {}, 'player');
     void view.mount(hostRef.current!);
     (window as unknown as { atlas?: unknown }).atlas = { editor, view };
-    const stop = listenToGm(
-      (map) => {
-        try {
-          editor.loadDocument(parseMap(map));
-          setConnected(true);
-        } catch {
-          // Mensagem inválida: mantém o mapa atual.
-        }
-      },
-      (rect) => view.showRect(rect),
-    );
+    const onMap = (map: Parameters<typeof parseMap>[0]) => {
+      try {
+        editor.loadDocument(parseMap(map));
+        setConnected(true);
+      } catch {
+        // Mensagem inválida: mantém o mapa atual.
+      }
+    };
+    // Sala online (link do mestre) ou janela no mesmo navegador.
+    const stop = room !== null
+      ? (validRoomCode(room) ? joinRoom(room, onMap, (rect) => view.showRect(rect), setStatus) : (setStatus('error'), () => {}))
+      : listenToGm(onMap, (rect) => view.showRect(rect));
     return () => {
       stop();
       view.destroy();
     };
-  }, [editor]);
+  }, [editor, room]);
 
   return (
     <div className="player-app">
       <main className="stage" ref={hostRef} />
       {!connected && (
         <div className="player-wait" role="status">
-          Aguardando o mapa do mestre. Deixe a janela do editor aberta neste navegador.
+          {room === null
+            ? 'Aguardando o mapa do mestre. Deixe a janela do editor aberta neste navegador.'
+            : status === 'error'
+              ? 'Não foi possível entrar na sala. Confira o link com o mestre e a sua conexão.'
+              : 'Entrando na sala do mestre…'}
         </div>
       )}
     </div>
