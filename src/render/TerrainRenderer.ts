@@ -1,8 +1,8 @@
 import { Assets, BufferImageSource, Container, Geometry, Mesh, Shader, Texture } from 'pixi.js';
 import type { MapDocument } from '../core/doc/MapDocument';
-import { TERRAINS } from '../core/doc/terrain';
+import { TERRAINS, WATER_ID } from '../core/doc/terrain';
 import { CHUNK_SIZE, chunkKey, type ChunkKey, type DirtyCells } from '../core/doc/TerrainLayer';
-import { buildChunkMask, MASK_BLUR, MASK_LAYERS, MASK_MARGIN_CELLS } from './terrainMask';
+import { buildChunkMask, MASK_BLUR, MASK_LAYERS, MASK_MARGIN_CELLS, MASK_SLOTS, type ChunkMask } from './terrainMask';
 import { terrainFragment, TERRAIN_VERTEX } from './terrainShader';
 import { TERRAIN_TEXTURE_URLS, TEXTURE_CELLS } from './terrainTextures';
 
@@ -10,6 +10,8 @@ interface ChunkView {
   mesh: Mesh<Geometry, Shader>;
   sources: BufferImageSource[];
   data: Uint8Array;
+  /** Terrenos ligados aos slots do shader (muda quando um terreno novo entra no chunk). */
+  slotsKey: string;
 }
 
 /**
@@ -22,7 +24,8 @@ interface ChunkView {
 export class TerrainRenderer {
   readonly container = new Container();
   private chunks = new Map<ChunkKey, ChunkView>();
-  private textures: Texture[] = [];
+  private textures = new Map<number, Texture>();
+  private fragment = terrainFragment(MASK_SLOTS);
   private pending = new Set<ChunkKey>();
   private unsubscribe: (() => void) | null = null;
   onChange: (() => void) | null = null;
@@ -30,16 +33,17 @@ export class TerrainRenderer {
   constructor(private doc: MapDocument) {}
 
   async load() {
-    this.textures = await Promise.all(
+    const loaded = await Promise.all(
       TERRAINS.map(async (t) => {
         const tex = await Assets.load<Texture>(TERRAIN_TEXTURE_URLS[t.key]);
         tex.source.addressMode = 'repeat';
         tex.source.scaleMode = 'linear';
         tex.source.autoGenerateMipmaps = true;
         tex.source.updateMipmaps();
-        return tex;
+        return [t.id, tex] as const;
       }),
     );
+    this.textures = new Map(loaded);
   }
 
   buildAll() {
@@ -86,8 +90,15 @@ export class TerrainRenderer {
     const mask = buildChunkMask(this.doc.grid, this.doc.terrain, cx, cy, existing?.data);
     const layerSize = mask.width * mask.height * 4;
     const layer = (l: number) => mask.data.subarray(l * layerSize, (l + 1) * layerSize);
+    const slotsKey = mask.slots.join(',');
     if (existing) {
       existing.sources.forEach((s, l) => { s.resource = layer(l); s.update(); });
+      if (existing.slotsKey !== slotsKey) {
+        const old = existing.mesh.shader;
+        existing.mesh.shader = this.makeShader(existing.sources, mask);
+        old?.destroy();
+        existing.slotsKey = slotsKey;
+      }
       return;
     }
     const sources = Array.from({ length: MASK_LAYERS }, (_, l) => new BufferImageSource({
@@ -110,20 +121,31 @@ export class TerrainRenderer {
       },
       indexBuffer: [0, 1, 2, 0, 2, 3],
     });
+    const shader = this.makeShader(sources, mask);
+    const mesh = new Mesh({ geometry, shader });
+    this.container.addChild(mesh);
+    this.chunks.set(key, { mesh, sources, data: mask.data, slotsKey });
+  }
+
+  /** Shader do chunk: as máscaras dele e as texturas dos terrenos de cada slot. */
+  private makeShader(sources: BufferImageSource[], mask: ChunkMask) {
     const cell = this.doc.grid.cellSize;
-    const shader = Shader.from({
-      gl: { vertex: TERRAIN_VERTEX, fragment: terrainFragment(TERRAINS.length), name: 'terrain-blend' },
+    const water = WATER_ID;
+    const waterVec = (l: number) => [0, 1, 2, 3].map((c) => (mask.slots[l * 4 + c] === water ? 1 : 0));
+    return Shader.from({
+      gl: { vertex: TERRAIN_VERTEX, fragment: this.fragment, name: 'terrain-blend' },
       resources: {
         ...Object.fromEntries(sources.map((s, l) => [`uMask${l + 1}`, s])),
-        ...Object.fromEntries(this.textures.map((t, i) => [`uTex${i + 1}`, t.source])),
+        ...Object.fromEntries(Array.from({ length: MASK_SLOTS }, (_, k) => {
+          const tex = this.textures.get(mask.slots[k]) ?? Texture.WHITE;
+          return [`uTex${k + 1}`, tex.source];
+        })),
         terrainUniforms: {
           uTexScale: { value: TEXTURE_CELLS * cell, type: 'f32' },
           uCell: { value: cell, type: 'f32' },
+          ...Object.fromEntries(Array.from({ length: MASK_LAYERS }, (_, l) => [`uWater${l + 1}`, { value: new Float32Array(waterVec(l)), type: 'vec4<f32>' }])),
         },
       },
     });
-    const mesh = new Mesh({ geometry, shader });
-    this.container.addChild(mesh);
-    this.chunks.set(key, { mesh, sources, data: mask.data });
   }
 }
