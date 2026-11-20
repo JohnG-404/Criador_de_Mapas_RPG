@@ -1,8 +1,8 @@
 import {
   ACESFilmicToneMapping, BoxGeometry, Float32BufferAttribute, BufferGeometry, CanvasTexture, CapsuleGeometry, CircleGeometry, Color, CylinderGeometry,
-  DirectionalLight, DoubleSide, Fog, Group, HemisphereLight, Matrix4, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
-  PerspectiveCamera, PlaneGeometry, SphereGeometry, RepeatWrapping, Scene, SRGBColorSpace, Sprite, SpriteMaterial, Texture,
-  TextureLoader, Vector3, WebGLRenderer, type Material,
+  DirectionalLight, DoubleSide, Fog, Group, HemisphereLight, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
+  PerspectiveCamera, PlaneGeometry, Quaternion, RepeatWrapping, Scene, SRGBColorSpace, Sprite, SpriteMaterial, Texture,
+  TextureLoader, Vector3, WebGLRenderer, type Material, type Object3D,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -10,11 +10,8 @@ import type { MapDocument } from '../core/doc/MapDocument';
 import { isCustomAsset, objectAsset } from '../core/doc/objects';
 import { OBJECT_TEXTURE_URLS, WALL_TEXTURE_URLS } from '../render/objectTextures';
 import { TOKEN_ART_URLS } from '../render/tokenArt';
-import { buildSceneData, groundHeights, type Box, type Prop, type SceneData, type WallHeight } from './sceneData';
-
-/** Objetos de forma orgânica: as fatias afinam para cima (cúpula). */
-const DOME = new Set(['arvore', 'arbusto', 'rochas', 'pedregulho', 'pedra', 'rocha-grande', 'rocha-escura', 'pedra-vermelha', 'rochas-quebradas', 'samambaia']);
-const SHADES = 5;
+import { PropBuilder } from './props3d';
+import { buildSceneData, groundHeights, type Box, type SceneData, type WallHeight } from './sceneData';
 
 export interface View3DOptions {
   /** Imagem do chão (terreno + grid) do mapa inteiro. */
@@ -23,10 +20,25 @@ export interface View3DOptions {
   onReady?: () => void;
 }
 
+/** Partes da cena que são refeitas separadamente. */
+type Layer = 'ground' | 'walls' | 'props' | 'minis';
+const ALL_LAYERS: Layer[] = ['ground', 'walls', 'props', 'minis'];
+
+/** Espera (ms) depois de uma edição antes de refazer cada camada: o chão é o mais caro. */
+const DELAY: Record<Layer, number> = { ground: 250, walls: 120, props: 120, minis: 30 };
+
+/** Maior densidade de pixels usada na vista 3D (telas 4K/retina pesam muito acima disso). */
+const MAX_PIXEL_RATIO = 1.5;
+
 /**
  * Vista 3D do mapa (three.js): chão com a textura do 2D e a água afundada,
  * paredes e portas extrudadas, objetos em volume (fatias empilhadas do
  * próprio desenho) e tokens como miniaturas. Só leitura: observa o documento.
+ *
+ * Desempenho: a cena é dividida em camadas (chão, paredes, objetos,
+ * miniaturas) e cada edição refaz só a camada afetada; objetos iguais são
+ * desenhados de uma vez (instancing); a luz do sol é fixa, então o mapa de
+ * sombras só é recalculado quando a cena muda, não a cada quadro.
  */
 export class View3D {
   readonly renderer: WebGLRenderer;
@@ -36,25 +48,34 @@ export class View3D {
   private sun = new DirectionalLight(0xfff1dc, 2.6);
   private loader = new TextureLoader();
   private textures = new Map<string, Promise<Texture>>();
-  private world = new Group();
+  private layers: Record<Layer, Group> = { ground: new Group(), walls: new Group(), props: new Group(), minis: new Group() };
+  private props = new PropBuilder();
+  private shared = new SharedMinis();
+  private labels = new Map<string, CanvasTexture>();
   private groundTex: CanvasTexture | null = null;
   private resize: ResizeObserver;
   private raf = 0;
   private dirty = true;
+  private pending = new Set<Layer>();
   private rebuildTimer = 0;
+  private rebuildAt = Infinity;
+  private building = false;
   private unsub: Array<() => void> = [];
   private builds = 0;
   private disposed = false;
   private framed = false;
+  private sunSize = -1;
 
   constructor(private host: HTMLElement, private doc: MapDocument, private opts: View3DOptions) {
-    this.renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = PCFSoftShadowMap;
+    // O sol não se move: as sombras só mudam quando a cena muda (ver rebuild).
+    this.renderer.shadowMap.autoUpdate = false;
     this.renderer.domElement.dataset.testid = 'map-3d';
     host.appendChild(this.renderer.domElement);
 
@@ -63,7 +84,7 @@ export class View3D {
     this.sun.castShadow = true;
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.03;
-    this.scene.add(this.sun, this.sun.target, this.world);
+    this.scene.add(this.sun, this.sun.target, ...ALL_LAYERS.map((k) => this.layers[k]));
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
@@ -76,7 +97,7 @@ export class View3D {
     this.resize.observe(host);
     this.fit();
     this.watch();
-    void this.rebuild();
+    this.schedule(ALL_LAYERS, 0);
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
       this.controls.update();
@@ -88,7 +109,7 @@ export class View3D {
   setWallHeight(h: WallHeight) {
     if (h === this.opts.wallHeight) return;
     this.opts.wallHeight = h;
-    void this.rebuild();
+    this.schedule(['walls'], 0);
   }
 
   setDoc(doc: MapDocument) {
@@ -96,7 +117,7 @@ export class View3D {
     this.doc = doc;
     this.framed = false;
     this.watch();
-    void this.rebuild();
+    this.schedule(ALL_LAYERS, 0);
   }
 
   /** Volta a câmera para a vista inicial. */
@@ -106,7 +127,13 @@ export class View3D {
   }
 
   /** Redesenha a textura do chão (o grid foi ligado ou desligado). */
-  refreshGround() { this.scheduleRebuild(0); }
+  refreshGround() { this.schedule(['ground'], 0); }
+
+  /** Refaz a cena inteira agora (usado pelos testes de desempenho). */
+  rebuildAll() {
+    for (const l of ALL_LAYERS) this.pending.add(l);
+    return this.flush();
+  }
 
   destroy() {
     this.disposed = true;
@@ -115,7 +142,10 @@ export class View3D {
     this.unsub.forEach((f) => f());
     this.resize.disconnect();
     this.controls.dispose();
-    this.clearWorld();
+    for (const k of ALL_LAYERS) this.clearLayer(k);
+    this.props.dispose();
+    this.shared.dispose();
+    this.labels.forEach((t) => t.dispose());
     this.groundTex?.dispose();
     for (const p of this.textures.values()) void p.then((t) => t.dispose());
     this.renderer.dispose();
@@ -125,13 +155,47 @@ export class View3D {
   private watch() {
     this.unsub.forEach((f) => f());
     const d = this.doc;
-    const again = () => this.scheduleRebuild(250);
-    this.unsub = [d.walls.onChange(again), d.objects.onChange(again), d.tokens.onChange(again), d.terrain.onChange(again), d.elevation.onChange(again), d.assets.onChange(again)];
+    // Terreno e relevo mudam a altura de tudo que está em cima do chão.
+    this.unsub = [
+      d.walls.onChange(() => this.schedule(['walls'])),
+      d.objects.onChange(() => this.schedule(['props'])),
+      d.assets.onChange(() => this.schedule(['props'])),
+      d.tokens.onChange(() => this.schedule(['minis'])),
+      d.terrain.onChange(() => this.schedule(ALL_LAYERS)),
+      d.elevation.onChange(() => this.schedule(ALL_LAYERS)),
+    ];
   }
 
-  private scheduleRebuild(ms: number) {
+  /**
+   * Agenda a reconstrução das camadas. Edições seguidas se juntam numa só;
+   * a espera é a menor entre as camadas pendentes.
+   */
+  private schedule(layers: Layer[], ms?: number) {
+    for (const l of layers) this.pending.add(l);
+    const wait = ms ?? Math.min(...layers.map((l) => DELAY[l]));
+    const at = performance.now() + wait;
+    if (at >= this.rebuildAt) return;
+    this.rebuildAt = at;
     window.clearTimeout(this.rebuildTimer);
-    this.rebuildTimer = window.setTimeout(() => void this.rebuild(), ms);
+    this.rebuildTimer = window.setTimeout(() => {
+      this.rebuildAt = Infinity;
+      void this.flush();
+    }, wait);
+  }
+
+  /** Refaz as camadas pendentes, uma reconstrução por vez. */
+  private async flush() {
+    if (this.building || !this.pending.size) return;
+    const todo = new Set(this.pending);
+    this.pending.clear();
+    this.building = true;
+    try {
+      await this.rebuild(todo);
+    } finally {
+      this.building = false;
+    }
+    // Edições que chegaram durante a reconstrução e cujo prazo já passou.
+    if (this.pending.size && this.rebuildAt === Infinity) void this.flush();
   }
 
   private fit() {
@@ -158,18 +222,17 @@ export class View3D {
     this.dirty = true;
   }
 
-  private clearWorld() {
-    this.world.traverse((o) => {
-      if (o instanceof Mesh || o instanceof Sprite) {
-        o.geometry.dispose();
-        const mats = Array.isArray(o.material) ? o.material : [o.material];
-        for (const m of mats as Material[]) {
-          if (m instanceof SpriteMaterial) m.map?.dispose();
-          m.dispose();
-        }
-      }
+  private clearLayer(layer: Layer) {
+    const g = this.layers[layer];
+    g.traverse((o) => {
+      if (!(o instanceof Mesh || o instanceof Sprite)) return;
+      if (o instanceof InstancedMesh) o.dispose();
+      // A geometria dos sprites é única e global no three.js.
+      if (!(o instanceof Sprite) && !o.geometry.userData.shared) o.geometry.dispose();
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats as Material[]) if (!m.userData.shared) m.dispose();
     });
-    this.world.clear();
+    g.clear();
   }
 
   private texture(key: string, url: string, repeat = false): Promise<Texture> {
@@ -195,52 +258,61 @@ export class View3D {
     return url ? this.texture(asset, url) : null;
   }
 
-  private async rebuild() {
+  private async rebuild(layers: Set<Layer>) {
     const build = ++this.builds;
     const s = buildSceneData(this.doc, this.opts.wallHeight);
-    const groundCanvas = this.opts.ground();
+    const groundCanvas = layers.has('ground') ? this.opts.ground() : null;
     // Carrega as texturas antes de trocar a cena, para não piscar.
-    const wallStyles = new Set(s.boxes.map((b) => b.style));
     const wallTex = new Map<string, Texture>();
     const propTex = new Map<string, Texture>();
     const tokenTex = new Map<string, Texture>();
     await Promise.all([
-      ...[...wallStyles, 'madeira'].map(async (k) => {
+      ...(layers.has('walls') ? [...new Set(s.boxes.map((b) => b.style)), 'madeira'] : []).map(async (k) => {
         const url = WALL_TEXTURE_URLS[k];
         if (url) wallTex.set(k, await this.texture(`wall:${k}`, url, true));
       }),
-      ...[...new Set(s.props.map((p) => p.asset))].map(async (k) => {
+      ...(layers.has('props') ? [...new Set(s.props.map((p) => p.asset))] : []).map(async (k) => {
         const t = this.propTexture(k);
-        if (t) propTex.set(k, await t.catch(() => null as unknown as Texture));
+        const tex = t && await t.catch(() => null);
+        if (tex) propTex.set(k, tex);
       }),
-      ...[...new Set(s.minis.map((m) => m.template).filter((k): k is string => !!k && !!TOKEN_ART_URLS[k]))].map(async (k) => {
-        tokenTex.set(k, await this.texture(`token:${k}`, TOKEN_ART_URLS[k]));
+      ...(layers.has('minis') ? [...new Set(s.minis.map((m) => m.template).filter((k): k is string => !!k && !!TOKEN_ART_URLS[k]))] : []).map(async (k) => {
+        const tex = await this.texture(`token:${k}`, TOKEN_ART_URLS[k]).catch(() => null);
+        if (tex) tokenTex.set(k, tex);
       }),
     ]);
-    if (this.disposed || build !== this.builds) return;
+    if (this.disposed) return;
 
-    this.clearWorld();
-    this.groundTex?.dispose();
-    this.groundTex = new CanvasTexture(groundCanvas);
-    this.groundTex.colorSpace = SRGBColorSpace;
-    this.groundTex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-    this.addGround(s, this.groundTex);
-    this.addWalls(s.boxes, wallTex);
-    for (const p of s.props) {
-      const t = propTex.get(p.asset);
-      if (t) this.addProp(p, t);
+    if (groundCanvas) {
+      this.clearLayer('ground');
+      this.groundTex?.dispose();
+      this.groundTex = new CanvasTexture(groundCanvas);
+      this.groundTex.colorSpace = SRGBColorSpace;
+      this.groundTex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+      this.addGround(s, this.groundTex);
+      this.placeSun(s);
     }
-    this.addMinis(s, tokenTex);
-    this.placeSun(s);
+    if (layers.has('walls')) { this.clearLayer('walls'); this.addWalls(s.boxes, wallTex); }
+    if (layers.has('props')) { this.clearLayer('props'); this.add('props', this.props.build(s.props, propTex)); }
+    if (layers.has('minis')) { this.clearLayer('minis'); this.addMinis(s, tokenTex); }
     this.frame(s);
+    this.renderer.shadowMap.needsUpdate = true;
     this.dirty = true;
-    this.renderer.domElement.dataset.ready = 'true';
-    this.renderer.domElement.dataset.builds = String(build);
+    const el = this.renderer.domElement;
+    el.dataset.ready = 'true';
+    el.dataset.builds = String(build);
+    el.dataset.layers = [...layers].join(' ');
     this.opts.onReady?.();
+  }
+
+  private add(layer: Layer, objs: Object3D[]) {
+    if (objs.length) this.layers[layer].add(...objs);
   }
 
   private placeSun(s: SceneData) {
     const size = Math.max(s.width, s.depth);
+    if (size === this.sunSize) return;
+    this.sunSize = size;
     const c = new Vector3(s.width / 2, 0, s.depth / 2);
     // Sol da tarde, vindo do sudoeste: ilumina as faces voltadas para a câmera inicial.
     this.sun.position.set(c.x - size * 0.6, size * 0.75, c.z + size * 0.3);
@@ -259,21 +331,24 @@ export class View3D {
   }
 
   private addGround(s: SceneData, tex: Texture) {
-    // Malha subdividida só quando há relevo ou água; senão um plano basta.
-    const detailed = s.hasRelief || s.hasWater;
-    const segX = detailed ? Math.min(400, Math.ceil(s.width * 2)) : 1;
-    const segZ = detailed ? Math.min(400, Math.ceil(s.depth * 2)) : 1;
+    // Chão plano e sem água: dois triângulos bastam (e não precisa calcular alturas).
+    const flat = !s.water.length && !s.hasRelief;
+    const segX = flat ? 1 : Math.min(400, Math.ceil(s.width * 2));
+    const segZ = flat ? 1 : Math.min(400, Math.ceil(s.depth * 2));
     const g = new PlaneGeometry(s.width, s.depth, segX, segZ);
     g.rotateX(-Math.PI / 2);
     g.translate(s.width / 2, 0, s.depth / 2);
-    const h = detailed ? groundHeights(this.doc, segX, segZ) : new Float32Array((segX + 1) * (segZ + 1));
-    const pos = g.attributes.position;
-    for (let i = 0; i < pos.count; i++) pos.setY(i, h[i]);
-    g.computeVertexNormals();
+    const h = flat ? new Float32Array((segX + 1) * (segZ + 1)) : groundHeights(this.doc, segX, segZ);
+    if (!flat) {
+      const pos = g.attributes.position;
+      for (let i = 0; i < pos.count; i++) pos.setY(i, h[i]);
+      g.computeVertexNormals();
+    }
     const ground = new Mesh(g, new MeshStandardMaterial({ map: tex, roughness: 0.95 }));
     ground.receiveShadow = true;
-    ground.castShadow = s.hasRelief;
-    this.world.add(ground);
+    // Plano não faz sombra em nada; com relevo, os morros fazem.
+    ground.castShadow = !flat;
+    this.layers.ground.add(ground);
 
     // Laterais do tabuleiro: uma faixa em cada borda, do chão até o fundo.
     const bottom = s.minHeight - 0.6;
@@ -296,7 +371,7 @@ export class View3D {
     skirt.setAttribute('position', new Float32BufferAttribute(verts, 3));
     skirt.setIndex(idx);
     skirt.computeVertexNormals();
-    this.world.add(new Mesh(skirt, new MeshStandardMaterial({ color: 0x3b3128, roughness: 1, side: DoubleSide })));
+    this.layers.ground.add(new Mesh(skirt, new MeshStandardMaterial({ color: 0x3b3128, roughness: 1, side: DoubleSide })));
 
     if (s.water.length) {
       // Superfície da água célula a célula, na altura de cada uma.
@@ -313,7 +388,7 @@ export class View3D {
       wg.computeVertexNormals();
       const water = new Mesh(wg, new MeshStandardMaterial({ color: 0x356f78, transparent: true, opacity: 0.42, roughness: 0.08, metalness: 0.15, depthWrite: false, side: DoubleSide }));
       water.receiveShadow = true;
-      this.world.add(water);
+      this.layers.ground.add(water);
     }
   }
 
@@ -326,7 +401,8 @@ export class View3D {
       m.makeRotationY(b.rotY).setPosition(b.x, b.y0 + b.height / 2, b.z);
       g.applyMatrix4(m);
       const key = b.kind === 'door' ? 'door' : `${b.kind}:${b.style}`;
-      groups.set(key, [...(groups.get(key) ?? []), g]);
+      const list = groups.get(key);
+      if (list) list.push(g); else groups.set(key, [g]);
     }
     for (const [key, geos] of groups) {
       const merged = mergeGeometries(geos);
@@ -338,120 +414,114 @@ export class View3D {
         : new MeshStandardMaterial({ map: tex.get(style) ?? null, color: kind === 'jamb' ? 0x9a9184 : 0xffffff, roughness: 0.9 });
       const mesh = new Mesh(merged, mat);
       mesh.castShadow = mesh.receiveShadow = true;
-      this.world.add(mesh);
+      this.layers.walls.add(mesh);
     }
   }
 
-  private addProp(p: Prop, tex: Texture) {
-    const group = new Group();
-    group.position.set(p.x, p.ground, p.z);
-    group.rotation.y = p.rotY;
-    if (p.height <= 0) {
-      // Rente ao chão (tapete, imagens próprias): um plano só.
-      const flat = new Mesh(
-        new PlaneGeometry(p.w, p.d).rotateX(-Math.PI / 2),
-        new MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.02, depthWrite: false, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -2 }),
-      );
-      flat.position.y = 0.01;
-      flat.receiveShadow = true;
-      group.add(flat);
-      this.world.add(group);
-      return;
-    }
-    if (p.asset === 'tocha') {
-      this.addTorch(group, p);
-      this.world.add(group);
-      return;
-    }
-    if (p.trunk) {
-      const trunk = new Mesh(
-        new CylinderGeometry(p.trunk.radius * 0.75, p.trunk.radius, p.trunk.height, 10),
-        new MeshStandardMaterial({ color: 0x5a4230, roughness: 1 }),
-      );
-      trunk.position.y = p.trunk.height / 2;
-      trunk.castShadow = true;
-      group.add(trunk);
-    }
-    // Fatias empilhadas do próprio desenho: de longe parecem um volume sólido.
-    const slices = Math.max(3, Math.min(28, Math.round(p.height * 20)));
-    const dome = DOME.has(p.asset);
-    const mats = Array.from({ length: SHADES }, (_, i) => {
-      const k = 0.5 + 0.5 * (i / (SHADES - 1));
-      return new MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: DoubleSide, roughness: 0.85, color: new Color(k, k, k) });
-    });
-    const plane = new PlaneGeometry(p.w, p.d).rotateX(-Math.PI / 2);
-    for (let i = 0; i < slices; i++) {
-      const t = slices === 1 ? 1 : i / (slices - 1);
-      const mesh = new Mesh(i === 0 ? plane : plane.clone(), mats[Math.round(t * (SHADES - 1))]);
-      mesh.position.y = p.base + p.height * t + 0.004;
-      if (dome) {
-        // Copa de árvore é mais larga um pouco acima da base; pedras e arbustos são cúpulas.
-        const c = p.trunk ? 0.3 : 0;
-        const sc = Math.sqrt(Math.max(0.1, 1 - ((t - c) / (1 - c + 0.08)) ** 2));
-        mesh.scale.set(sc, 1, sc);
-        // Gira cada fatia um pouco, para a borda não virar listras verticais.
-        mesh.rotation.y = ((i * 137.5) % 360) * (Math.PI / 180);
-      }
-      mesh.castShadow = true;
-      mesh.receiveShadow = i === slices - 1;
-      group.add(mesh);
-    }
-    this.world.add(group);
-  }
-
-  /** Tocha: haste de madeira com chama que brilha. */
-  private addTorch(group: Group, p: Prop) {
-    const k = p.height / 1.1;
-    const pole = new Mesh(new CylinderGeometry(0.035 * k, 0.05 * k, 0.75 * k, 8), new MeshStandardMaterial({ color: 0x4a3626, roughness: 0.9 }));
-    pole.position.y = 0.375 * k;
-    pole.castShadow = true;
-    const cup = new Mesh(new CylinderGeometry(0.08 * k, 0.05 * k, 0.1 * k, 10), new MeshStandardMaterial({ color: 0x2d2a27, metalness: 0.6, roughness: 0.5 }));
-    cup.position.y = 0.78 * k;
-    const flame = new Mesh(new SphereGeometry(0.075 * k, 12, 10), new MeshStandardMaterial({ color: 0xffb347, emissive: 0xff8a1e, emissiveIntensity: 2.2 }));
-    flame.scale.y = 1.6;
-    flame.position.y = 0.9 * k;
-    group.add(pole, cup, flame);
-  }
-
+  /**
+   * Miniaturas, instanciadas: as fichas sem retrato (base + corpo) e as com
+   * retrato (disco na cor do token + a arte deitada no topo, um grupo por
+   * modelo). A cor de cada token vai por instância. Os nomes são sprites.
+   */
   private addMinis(s: SceneData, art: Map<string, Texture>) {
-    const baseMat = new MeshStandardMaterial({ color: 0x23211f, roughness: 0.6 });
-    for (const t of s.minis) {
-      const r = t.size * 0.4;
-      const tex = t.template ? art.get(t.template) : undefined;
-      if (tex) {
-        // Ficha com retrato: disco na cor do token e a arte deitada por cima.
-        const h = 0.12;
-        const disc = new Mesh(new CylinderGeometry(r, r * 1.04, h, 36), [
-          new MeshStandardMaterial({ color: new Color(t.color), roughness: 0.5 }),
-          new MeshStandardMaterial({ color: 0x2b3324, roughness: 0.8 }),
-          baseMat,
-        ]);
-        disc.position.set(t.x, t.ground + h / 2, t.z);
-        disc.castShadow = disc.receiveShadow = true;
-        const face = new Mesh(new CircleGeometry(r * 0.88, 36).rotateX(-Math.PI / 2), new MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.05, roughness: 0.7 }));
-        face.position.set(t.x, t.ground + h + 0.003, t.z);
-        this.world.add(disc, face);
-        if (t.name) {
-          const label = makeLabel(t.name);
-          label.position.set(t.x, t.ground + h + 0.45, t.z);
-          this.world.add(label);
-        }
-        continue;
-      }
-      const base = new Mesh(new CylinderGeometry(r, r * 1.05, 0.08, 28), baseMat);
-      base.position.set(t.x, t.ground + 0.04, t.z);
-      const color = new Color(t.color);
-      const body = new Mesh(new CapsuleGeometry(r * 0.48, t.size * 0.42, 6, 16), new MeshStandardMaterial({ color, roughness: 0.55 }));
-      const bodyY = t.ground + 0.08 + r * 0.48 + t.size * 0.21;
-      body.position.set(t.x, bodyY, t.z);
-      for (const m of [base, body]) { m.castShadow = true; m.receiveShadow = true; this.world.add(m); }
-      if (t.name) {
-        const label = makeLabel(t.name);
-        label.position.set(t.x, bodyY + t.size * 0.21 + r * 0.48 + 0.35, t.z);
-        this.world.add(label);
+    if (!s.minis.length) return;
+    const plain = s.minis.filter((t) => !(t.template && art.get(t.template)));
+    const portrait = s.minis.filter((t) => t.template && art.get(t.template));
+    const m = new Matrix4(), q = new Quaternion(), pos = new Vector3(), sc = new Vector3(), color = new Color();
+    const finish = (im: InstancedMesh, shadows: boolean) => {
+      im.instanceMatrix.needsUpdate = true;
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+      im.computeBoundingSphere();
+      im.castShadow = im.receiveShadow = shadows;
+      this.layers.minis.add(im);
+    };
+    if (plain.length) {
+      const base = new InstancedMesh(this.shared.baseGeo, this.shared.baseMat, plain.length);
+      const body = new InstancedMesh(this.shared.bodyGeo, this.shared.bodyMat, plain.length);
+      plain.forEach((t, i) => {
+        const k = t.size;
+        base.setMatrixAt(i, m.compose(pos.set(t.x, t.ground, t.z), q, sc.set(k, 1, k)));
+        body.setMatrixAt(i, m.compose(pos.set(t.x, t.ground, t.z), q, sc.set(k, k, k)));
+        body.setColorAt(i, color.set(t.color));
+      });
+      finish(base, true);
+      finish(body, true);
+    }
+    if (portrait.length) {
+      const disc = new InstancedMesh(this.shared.discGeo, this.shared.discMat, portrait.length);
+      portrait.forEach((t, i) => {
+        disc.setMatrixAt(i, m.compose(pos.set(t.x, t.ground, t.z), q, sc.set(t.size, 1, t.size)));
+        disc.setColorAt(i, color.set(t.color));
+      });
+      finish(disc, true);
+      const byTemplate = new Map<string, typeof portrait>();
+      for (const t of portrait) { const l = byTemplate.get(t.template!); if (l) l.push(t); else byTemplate.set(t.template!, [t]); }
+      for (const [key, list] of byTemplate) {
+        const face = new InstancedMesh(this.shared.faceGeo, this.shared.faceMaterial(key, art.get(key)!), list.length);
+        list.forEach((t, i) => face.setMatrixAt(i, m.compose(pos.set(t.x, t.ground, t.z), q, sc.set(t.size, 1, t.size))));
+        finish(face, false);
       }
     }
+    const used = new Set<string>();
+    for (const t of s.minis) {
+      if (!t.name) continue;
+      const withArt = !!(t.template && art.get(t.template));
+      // Topo da ficha: disco de 0,12; ou base de 0,08 + cápsula (0,42 + 2 × 0,192 do tamanho).
+      const top = t.ground + (withArt ? 0.12 + 0.1 : 0.08 + t.size * (0.42 + 0.384));
+      const label = this.label(t.name);
+      label.position.set(t.x, top + 0.35, t.z);
+      this.layers.minis.add(label);
+      used.add(t.name);
+    }
+    // Esquece as etiquetas de nomes que sumiram do mapa.
+    for (const [name, tex] of this.labels) if (!used.has(name)) { tex.dispose(); this.labels.delete(name); }
   }
+
+  /** Etiqueta com o nome; a textura de cada nome é guardada entre reconstruções. */
+  private label(text: string): Sprite {
+    let tex = this.labels.get(text);
+    if (!tex) { tex = makeLabelTexture(text); this.labels.set(text, tex); }
+    const w = tex.image.width as number;
+    const s = new Sprite(new SpriteMaterial({ map: tex, depthTest: false }));
+    s.scale.set((w / 64) * 0.32, 0.32, 1);
+    s.renderOrder = 10;
+    return s;
+  }
+}
+
+/**
+ * Geometrias e materiais das miniaturas em escala 1 (token de 1 célula),
+ * criados uma vez e reaproveitados. Para tokens com arte, este é o lugar
+ * de um disco texturizado no topo da base.
+ */
+class SharedMinis {
+  readonly baseGeo = shared(new CylinderGeometry(0.4, 0.42, 0.08, 28).translate(0, 0.04, 0));
+  readonly bodyGeo = shared(new CapsuleGeometry(0.192, 0.42, 6, 16).translate(0, 0.08 + 0.192 + 0.21, 0));
+  readonly baseMat = shared(new MeshStandardMaterial({ color: 0x23211f, roughness: 0.6 }));
+  readonly bodyMat = shared(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.55 }));
+  /** Ficha com retrato: disco (cor por instância) e a arte por cima. */
+  readonly discGeo = shared(new CylinderGeometry(0.4, 0.416, 0.12, 36).translate(0, 0.06, 0));
+  readonly discMat = shared(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 }));
+  readonly faceGeo = shared(new CircleGeometry(0.352, 36).rotateX(-Math.PI / 2).translate(0, 0.123, 0));
+  private faces = new Map<string, MeshStandardMaterial>();
+
+  faceMaterial(key: string, map: Texture) {
+    let mat = this.faces.get(key);
+    if (!mat) {
+      mat = shared(new MeshStandardMaterial({ map, transparent: true, alphaTest: 0.05, roughness: 0.7 }));
+      this.faces.set(key, mat);
+    }
+    return mat;
+  }
+
+  dispose() {
+    for (const x of [this.baseGeo, this.bodyGeo, this.baseMat, this.bodyMat, this.discGeo, this.discMat, this.faceGeo, ...this.faces.values()]) x.dispose();
+  }
+}
+
+function shared<T extends BufferGeometry | Material>(x: T): T {
+  x.userData.shared = true;
+  return x;
 }
 
 /** UVs da caixa proporcionais ao tamanho: a textura cobre 2 × 2 células, como no 2D. */
@@ -468,7 +538,7 @@ function scaleBoxUv(g: BoxGeometry, len: number, height: number, thick: number) 
   }
 }
 
-function makeLabel(text: string): Sprite {
+function makeLabelTexture(text: string): CanvasTexture {
   const c = document.createElement('canvas');
   const g = c.getContext('2d')!;
   const font = '600 44px system-ui, sans-serif';
@@ -486,8 +556,5 @@ function makeLabel(text: string): Sprite {
   g.fillText(text, 18, 34);
   const tex = new CanvasTexture(c);
   tex.colorSpace = SRGBColorSpace;
-  const s = new Sprite(new SpriteMaterial({ map: tex, depthTest: false }));
-  s.scale.set((w / 64) * 0.32, 0.32, 1);
-  s.renderOrder = 10;
-  return s;
+  return tex;
 }
