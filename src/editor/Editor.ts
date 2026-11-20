@@ -1,6 +1,7 @@
 import { ItemsCommand, newId } from '../core/doc/ItemLayer';
 import { FOG_CLEAR, FOG_HIDDEN, MapDocument, type NewMapOptions } from '../core/doc/MapDocument';
-import { CUSTOM_ASSET_PREFIX, DEFAULT_VISION, hitNote, hitObject, hitToken, OBJECT_ASSETS, TOKEN_COLORS, type MapObject, type Note, type Token } from '../core/doc/objects';
+import { CUSTOM_ASSET_PREFIX, DEFAULT_VISION, hitLink, hitNote, hitObject, hitToken, OBJECT_ASSETS, TOKEN_COLORS, type MapLink, type MapObject, type Note, type Token } from '../core/doc/objects';
+import type { Campaign } from '../core/doc/serialize';
 import { visibleCells } from '../core/doc/vision';
 import type { ItemLayer } from '../core/doc/ItemLayer';
 import { EMPTY, TERRAINS } from '../core/doc/terrain';
@@ -16,8 +17,8 @@ import { strokeCells } from '../core/tools/strokeCells';
 import { cleanSheet, tokenTemplate, type TokenSheet } from '../core/doc/tokenTemplates';
 import { brushAmount, clampLevel, distanceToStroke, ELEV_ZERO, smoothedLevel, type ElevMode } from '../core/doc/elevation';
 
-export type ToolId = 'pan' | 'select' | 'brush' | 'eraser' | 'bucket' | 'elevation' | 'wall' | 'door' | 'object' | 'token' | 'fog' | 'ruler' | 'note';
-export type LayerId = 'terrain' | 'elevation' | 'walls' | 'objects' | 'tokens' | 'fog' | 'notes';
+export type ToolId = 'pan' | 'select' | 'brush' | 'eraser' | 'bucket' | 'elevation' | 'wall' | 'door' | 'object' | 'token' | 'fog' | 'ruler' | 'note' | 'link';
+export type LayerId = 'terrain' | 'elevation' | 'walls' | 'objects' | 'tokens' | 'fog' | 'notes' | 'links';
 export type FogMode = 'reveal' | 'hide';
 
 export const TOOLS: { id: ToolId; name: string; key: string; layer: LayerId | null }[] = [
@@ -34,10 +35,12 @@ export const TOOLS: { id: ToolId; name: string; key: string; layer: LayerId | nu
   { id: 'fog', name: 'Névoa', key: 'n', layer: 'fog' },
   { id: 'ruler', name: 'Régua', key: 'm', layer: null },
   { id: 'note', name: 'Nota', key: 'a', layer: 'notes' },
+  { id: 'link', name: 'Passagem', key: 'p', layer: 'links' },
 ];
 
 export const LAYERS: { id: LayerId; name: string }[] = [
   { id: 'notes', name: 'Notas do mestre' },
+  { id: 'links', name: 'Passagens' },
   { id: 'fog', name: 'Névoa de guerra' },
   { id: 'tokens', name: 'Tokens' },
   { id: 'objects', name: 'Objetos' },
@@ -48,7 +51,7 @@ export const LAYERS: { id: LayerId; name: string }[] = [
 
 export interface LayerState { visible: boolean; locked: boolean }
 
-export type SelectableLayer = 'objects' | 'tokens' | 'notes';
+export type SelectableLayer = 'objects' | 'tokens' | 'notes' | 'links';
 export type Selection = { layer: SelectableLayer; id: string } | null;
 
 /** O que a visualização desenha por cima do mapa durante um gesto. */
@@ -90,7 +93,12 @@ export interface EditorState {
   canRedo: boolean;
   /** Muda a cada mapa novo, para a visualização recriar tudo. */
   docVersion: number;
+  /** Muda quando a lista de mapas da campanha (ou o mapa dos jogadores) muda. */
+  campaignVersion: number;
 }
+
+/** Tamanho (em células) da área enquadrada ao chegar por uma passagem. */
+const ARRIVAL_VIEW_CELLS = 24;
 
 export const DEFAULT_MAP: NewMapOptions = {
   name: 'Mapa sem título',
@@ -116,7 +124,13 @@ export class Editor {
   private listeners = new Set<() => void>();
   private stroke: { cmd: PaintCommand; last: Point; value: number; elev?: { mode: ElevMode; amounts: Map<number, number>; target: number } } | null = null;
   private wallDrag: { start: Point; end: Point; rect: boolean } | null = null;
-  private moveDrag: { layer: SelectableLayer; id: string; dx: number; dy: number; before: MapObject | Token | Note; moved: boolean } | null = null;
+  private moveDrag: { layer: SelectableLayer; id: string; dx: number; dy: number; before: MapObject | Token | Note | MapLink; moved: boolean } | null = null;
+  /** Todos os mapas da campanha (o atual incluso), na ordem da lista. */
+  private mapList: MapDocument[];
+  /** Mapa que a janela e a sala dos jogadores mostram. */
+  private playerMapId: string;
+  /** Área a enquadrar quando a visualização carregar o próximo mapa (chegada por passagem). */
+  private focus: { x: number; y: number; width: number; height: number } | null = null;
   private rulerDrag: { a: Point; b: Point } | null = null;
   private ruler: Ruler | null = null;
   private hoverPoint: Point | null = null;
@@ -126,6 +140,8 @@ export class Editor {
 
   constructor(options: NewMapOptions = DEFAULT_MAP) {
     this.doc = new MapDocument(options);
+    this.mapList = [this.doc];
+    this.playerMapId = this.doc.id;
     this.state = {
       tool: 'brush',
       terrain: TERRAINS[1].id,
@@ -148,10 +164,12 @@ export class Editor {
         tokens: { visible: true, locked: false },
         fog: { visible: true, locked: false },
         notes: { visible: true, locked: false },
+        links: { visible: true, locked: false },
       },
       canUndo: false,
       canRedo: false,
       docVersion: 0,
+      campaignVersion: 0,
     };
     this.history.onChange(() => {
       // Desfazer pode apagar o item selecionado.
@@ -318,13 +336,200 @@ export class Editor {
     this.history.push(new CompositeCommand('Gerar mapa', [terrain, fog, walls, objects]));
   }
 
-  /** Troca o documento (mapa novo, arquivo aberto, salvamento automático). */
+  /** Troca o documento (mapa novo, arquivo aberto, salvamento automático): vira uma campanha de um mapa só. */
   loadDocument(doc: MapDocument) {
+    this.loadCampaign({ maps: [doc], active: doc.id, players: doc.id });
+  }
+
+  // ---- campanha: vários mapas ligados por passagens
+
+  /** Troca a campanha inteira (arquivo aberto, nuvem, salvamento automático). */
+  loadCampaign(c: Campaign) {
+    this.mapList = c.maps.length ? [...c.maps] : [new MapDocument(DEFAULT_MAP)];
+    this.playerMapId = this.findMap(c.players)?.id ?? this.mapList[0].id;
+    this.focus = null;
+    this.showMap(this.findMap(c.active) ?? this.mapList[0]);
+    this.set({ campaignVersion: this.state.campaignVersion + 1 });
+  }
+
+  /** A campanha como está agora (para salvar). */
+  campaign(): Campaign {
+    return { maps: [...this.mapList], active: this.doc.id, players: this.playerMapId };
+  }
+
+  get maps(): readonly MapDocument[] { return this.mapList; }
+  findMap(id: string) { return this.mapList.find((m) => m.id === id); }
+  /** O mapa que os jogadores estão vendo (pode ser outro que o aberto no editor). */
+  get playerDoc(): MapDocument { return this.findMap(this.playerMapId) ?? this.doc; }
+
+  /** Abre outro mapa da campanha só para o mestre (os jogadores continuam onde estão). */
+  switchMap(id: string) {
+    const doc = this.findMap(id);
+    if (!doc || doc === this.doc) return;
+    this.focus = null;
+    this.showMap(doc);
+  }
+
+  /** Leva os jogadores para um mapa (por padrão, o aberto no editor). */
+  showMapToPlayers(id = this.doc.id) {
+    if (!this.findMap(id) || id === this.playerMapId) return;
+    this.playerMapId = id;
+    this.set({ campaignVersion: this.state.campaignVersion + 1 });
+  }
+
+  /**
+   * Cria um mapa na campanha e o abre. Com `from`, o mapa novo ganha no
+   * centro uma passagem de volta para ele.
+   */
+  addMap(options: NewMapOptions, from?: MapDocument): MapDocument {
+    const doc = new MapDocument(options);
+    if (from) {
+      const center = doc.grid.cellToWorld({ col: Math.floor(options.cols / 2), row: Math.floor(options.rows / 2) });
+      const id = newId('p');
+      doc.links.put(id, { id, ...center, target: from.id, label: from.options.name });
+    }
+    this.mapList.push(doc);
+    this.set({ campaignVersion: this.state.campaignVersion + 1 });
+    this.focus = null;
+    this.showMap(doc);
+    return doc;
+  }
+
+  renameMap(id: string, name: string) {
+    const doc = this.findMap(id);
+    const clean = name.trim().slice(0, 80);
+    if (!doc || !clean || doc.options.name === clean) return;
+    doc.options.name = clean;
+    this.set({ campaignVersion: this.state.campaignVersion + 1 });
+  }
+
+  /** Tira um mapa da campanha. As passagens que levavam a ele ficam sem destino. */
+  removeMap(id: string) {
+    const doc = this.findMap(id);
+    if (!doc || this.mapList.length < 2) return;
+    const idx = this.mapList.indexOf(doc);
+    this.mapList.splice(idx, 1);
+    for (const m of this.mapList) {
+      let changed = false;
+      for (const l of m.links.all()) {
+        if (l.target === id) { m.links.put(l.id, { ...l, target: '' }); changed = true; }
+      }
+      if (changed) m.links.emit();
+    }
+    const fallback = this.mapList[Math.max(0, idx - 1)];
+    if (this.playerMapId === id) this.playerMapId = this.doc === doc ? fallback.id : this.doc.id;
+    this.set({ campaignVersion: this.state.campaignVersion + 1 });
+    if (this.doc === doc) { this.focus = null; this.showMap(fallback); }
+  }
+
+  /**
+   * Atravessa uma passagem: abre o mapa de destino para o mestre e os
+   * jogadores, enquadra a passagem de volta (se houver) e, com `carryPcs`,
+   * leva junto os personagens de jogador.
+   */
+  followLink(linkId: string, carryPcs = true): boolean {
+    const link = this.doc.links.get(linkId);
+    const target = link ? this.findMap(link.target) : undefined;
+    if (!link || !target || target === this.doc) return false;
+    const from = this.doc;
+    const back = target.links.all().find((l) => l.target === from.id);
+    const grid = target.grid;
+    const arrival = back ? { x: back.x, y: back.y } : grid.cellToWorld({ col: Math.floor(grid.cols / 2), row: Math.floor(grid.rows / 2) });
+    if (carryPcs) {
+      const pcs = from.tokens.all().filter((t) => t.pc);
+      if (pcs.length) {
+        for (const t of pcs) from.tokens.put(t.id, null);
+        from.tokens.emit();
+        // Ao voltar, os personagens que já estavam no destino são substituídos.
+        for (const t of pcs) target.tokens.put(t.id, null);
+        const spots = freeCellsAround(target, arrival, pcs.length);
+        pcs.forEach((t, i) => target.tokens.put(t.id, { ...t, ...(spots[i] ?? arrival) }));
+        target.tokens.emit();
+      }
+    }
+    if (back) {
+      const side = ARRIVAL_VIEW_CELLS * grid.cellSize;
+      this.focus = { x: arrival.x - side / 2, y: arrival.y - side / 3, width: side, height: (side * 2) / 3 };
+    } else {
+      this.focus = null;
+    }
+    this.playerMapId = target.id;
+    this.set({ campaignVersion: this.state.campaignVersion + 1 });
+    this.showMap(target);
+    if (carryPcs && this.state.autoReveal) this.revealVisionNow();
+    return true;
+  }
+
+  /** Área que a visualização deve enquadrar ao abrir o mapa atual (uma vez só). */
+  takeFocus() {
+    const f = this.focus;
+    this.focus = null;
+    return f;
+  }
+
+  /**
+   * Avisa quando o conteúdo a salvar ou a mostrar muda: edições (histórico),
+   * troca de mapa e mudanças na lista de mapas.
+   */
+  onDocChange(fn: () => void) {
+    let { docVersion, campaignVersion } = this.state;
+    const offHistory = this.history.onChange(fn);
+    const offState = this.subscribe(() => {
+      const s = this.state;
+      if (s.docVersion !== docVersion || s.campaignVersion !== campaignVersion) {
+        docVersion = s.docVersion;
+        campaignVersion = s.campaignVersion;
+        fn();
+      }
+    });
+    return () => { offHistory(); offState(); };
+  }
+
+  private showMap(doc: MapDocument) {
     this.endGestures();
     this.ruler = null;
     this.doc = doc;
     this.history.clear();
     this.set({ docVersion: this.state.docVersion + 1, selection: null });
+  }
+
+  // ---- passagens
+  selectedLink() {
+    const sel = this.state.selection;
+    return sel?.layer === 'links' ? this.doc.links.get(sel.id) ?? null : null;
+  }
+
+  /** Escolhe o destino da passagem selecionada (o nome do mapa vira o rótulo, se ele estiver vazio ou for o nome antigo). */
+  setLinkTarget(target: string) {
+    const l = this.selectedLink();
+    if (!l || l.target === target) return;
+    const oldName = this.findMap(l.target)?.options.name ?? '';
+    const newName = this.findMap(target)?.options.name ?? '';
+    const label = !l.label || l.label === oldName ? newName : l.label;
+    this.commit(this.doc.links, 'Destino da passagem', [[l.id, { ...l, target, label }]]);
+  }
+
+  setLinkLabel(label: string) {
+    const l = this.selectedLink();
+    const clean = label.slice(0, 40);
+    if (l && l.label !== clean) this.commit(this.doc.links, 'Nome da passagem', [[l.id, { ...l, label: clean }]]);
+  }
+
+  /** Cria um mapa novo como destino da passagem selecionada, com a passagem de volta. */
+  addMapForLink(options: NewMapOptions) {
+    const l = this.selectedLink();
+    if (!l) return null;
+    const from = this.doc;
+    const linkId = l.id;
+    const doc = this.addMap(options, from);
+    // A passagem fica no mapa de origem; o histórico dele já foi limpo pela troca, então muda direto.
+    const cur = from.links.get(linkId);
+    if (cur) {
+      from.links.put(linkId, { ...cur, target: doc.id, label: cur.label || doc.options.name });
+      from.links.emit();
+    }
+    this.set({ campaignVersion: this.state.campaignVersion + 1 });
+    return doc;
   }
 
   /** A ferramenta atual usa o botão esquerdo (todas menos Mover mapa)? */
@@ -357,6 +562,7 @@ export class Editor {
       return;
     }
     if (tool === 'note') return this.placeNote(p);
+    if (tool === 'link') return this.placeLink(p);
     if (tool === 'wall' || tool === 'door') {
       if (mods.alt) return this.eraseWallAt(p);
       if (tool === 'door') return this.placeDoor(p);
@@ -469,6 +675,7 @@ export class Editor {
     if (!sel) return;
     if (sel.layer === 'objects') this.commit(this.doc.objects, 'Apagar objeto', [[sel.id, null]]);
     else if (sel.layer === 'notes') this.commit(this.doc.notes, 'Apagar nota', [[sel.id, null]]);
+    else if (sel.layer === 'links') this.commit(this.doc.links, 'Apagar passagem', [[sel.id, null]]);
     else this.commit(this.doc.tokens, 'Apagar token', [[sel.id, null]]);
     this.set({ selection: null });
   }
@@ -578,6 +785,10 @@ export class Editor {
       const t = this.doc.tokens.all().reverse().find((t) => hitToken(t, cell, p));
       if (t) hit = { layer: 'tokens', id: t.id };
     }
+    if (!hit && this.layerUsable('links')) {
+      const l = this.doc.links.all().reverse().find((l) => hitLink(l, cell, p));
+      if (l) hit = { layer: 'links', id: l.id };
+    }
     if (!hit && this.layerUsable('notes')) {
       const n = this.doc.notes.all().reverse().find((n) => hitNote(n, cell, p));
       if (n) hit = { layer: 'notes', id: n.id };
@@ -605,7 +816,7 @@ export class Editor {
     const item = layer.get(d.id);
     if (!item) return;
     const raw = { x: p.x + d.dx, y: p.y + d.dy };
-    const pos = d.layer === 'notes' || free ? raw : d.layer === 'tokens' ? this.snapCellCenter(raw) : this.snapHalf(raw);
+    const pos = d.layer === 'notes' || free ? raw : d.layer === 'tokens' || d.layer === 'links' ? this.snapCellCenter(raw) : this.snapHalf(raw);
     if (pos.x === item.x && pos.y === item.y) return;
     d.moved = true;
     layer.put(d.id, { ...item, ...pos });
@@ -621,12 +832,12 @@ export class Editor {
     if (!after) return;
     // O item já está na posição final; o comando guarda o "antes" para desfazer.
     layer.put(d.id, d.before);
-    const label = d.layer === 'objects' ? 'Mover objeto' : d.layer === 'notes' ? 'Mover nota' : 'Mover token';
+    const label = { objects: 'Mover objeto', notes: 'Mover nota', links: 'Mover passagem', tokens: 'Mover token' }[d.layer];
     this.commit(layer, label, [[d.id, after]]);
   }
 
-  private layerOf(id: SelectableLayer): ItemLayer<MapObject | Token | Note> {
-    return this.doc[id] as ItemLayer<MapObject | Token | Note>;
+  private layerOf(id: SelectableLayer): ItemLayer<MapObject | Token | Note | MapLink> {
+    return this.doc[id] as ItemLayer<MapObject | Token | Note | MapLink>;
   }
 
   // ---- paredes e portas
@@ -686,6 +897,17 @@ export class Editor {
     const id = newId('n');
     this.commit(this.doc.notes, 'Nota', [[id, { id, x: p.x, y: p.y, text: '' }]]);
     this.set({ selection: { layer: 'notes', id } });
+  }
+
+  private placeLink(p: Point) {
+    const cell = this.doc.grid.worldToCell(p);
+    if (!cell) return;
+    const id = newId('p');
+    const other = this.mapList.find((m) => m !== this.doc);
+    this.commit(this.doc.links, 'Passagem', [[id, {
+      id, ...this.doc.grid.cellToWorld(cell), target: other?.id ?? '', label: other?.options.name ?? '',
+    }]]);
+    this.set({ selection: { layer: 'links', id } });
   }
 
   private placeToken(p: Point) {
@@ -801,4 +1023,31 @@ export function nextTokenName(used: string[]) {
       if (!set.has(name)) return name;
     }
   }
+}
+
+/** Células livres (sem token) mais perto de um ponto, para os personagens que chegam por uma passagem. */
+function freeCellsAround(doc: MapDocument, p: Point, count: number): Point[] {
+  const grid = doc.grid;
+  const start = grid.worldToCell(p) ?? { col: Math.floor(grid.cols / 2), row: Math.floor(grid.rows / 2) };
+  const taken = new Set(doc.tokens.all().map((t) => {
+    const c = grid.worldToCell(t);
+    return c ? `${c.col},${c.row}` : '';
+  }));
+  const out: Point[] = [];
+  const seen = new Set<string>();
+  for (let r = 0; r <= 6 && out.length < count; r++) {
+    const ring = grid.cellsInRadius(start, r)
+      .map((c) => ({ c, d: Math.hypot(c.col - start.col, c.row - start.row) }))
+      .sort((a, b) => a.d - b.d);
+    for (const { c } of ring) {
+      const k = `${c.col},${c.row}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      // A célula da passagem fica livre para não esconder o marcador.
+      if (taken.has(k) || (c.col === start.col && c.row === start.row)) continue;
+      out.push(grid.cellToWorld(c));
+      if (out.length >= count) break;
+    }
+  }
+  return out;
 }

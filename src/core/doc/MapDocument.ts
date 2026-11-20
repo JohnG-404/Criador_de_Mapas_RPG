@@ -1,8 +1,8 @@
 import { HexGrid } from '../grid/HexGrid';
 import type { GridKind, GridSystem } from '../grid/GridSystem';
 import { SquareGrid } from '../grid/SquareGrid';
-import { ItemLayer } from './ItemLayer';
-import { registerCustomAssets, type CustomAsset, type MapObject, type Note, type Token } from './objects';
+import { ItemLayer, newId } from './ItemLayer';
+import { registerCustomAssets, type CustomAsset, type MapLink, type MapObject, type Note, type Token } from './objects';
 import { TerrainLayer } from './TerrainLayer';
 import { ELEV_ZERO } from './elevation';
 import type { WallSegment } from './walls';
@@ -30,6 +30,10 @@ export class MapDocument {
   readonly objects = new ItemLayer<MapObject>();
   readonly tokens = new ItemLayer<Token>();
   readonly notes = new ItemLayer<Note>();
+  /** Passagens para outros mapas da campanha. */
+  readonly links = new ItemLayer<MapLink>();
+  /** Id estável do mapa dentro da campanha (as passagens apontam para ele). */
+  id = newId('m');
   /** Imagens importadas usadas pelos objetos deste mapa. */
   readonly assets = new ItemLayer<CustomAsset>();
   /** Névoa de guerra: 1 = escondido dos jogadores, 0 = visível. Começa toda visível. */

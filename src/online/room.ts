@@ -22,26 +22,25 @@ export async function hostRoom(
   let version = Date.now();
   let timer = 0;
   let lastView: ViewRect | null = null;
+  let lastMap = editor.playerDoc.id;
   const send = () => {
     timer = 0;
     version += 1;
-    for (const m of toChunks(JSON.stringify(forPlayers(editor.doc)), version)) ch.send(m);
+    const doc = editor.playerDoc;
+    // Mapa novo (passagem): o enquadramento antigo não vale mais.
+    if (doc.id !== lastMap) { lastMap = doc.id; lastView = null; }
+    for (const m of toChunks(JSON.stringify(forPlayers(doc)), version)) ch.send(m);
     if (lastView) ch.send({ type: 'view', rect: lastView });
   };
   const schedule = () => { if (!timer) timer = window.setTimeout(send, SEND_DELAY_MS); };
   ch.onMessage((m) => { if (m?.type === 'hello') schedule(); });
   ch.onPeers((n) => events.onPeers?.(n));
   ch.onStatus((s) => { events.onStatus?.(s); if (s === 'online') schedule(); });
-  const offHistory = editor.history.onChange(schedule);
-  let docVersion = editor.getState().docVersion;
-  const offState = editor.subscribe(() => {
-    const v = editor.getState().docVersion;
-    if (v !== docVersion) { docVersion = v; schedule(); }
-  });
+  const offChange = editor.onDocChange(schedule);
   return {
     code,
-    showView: (rect) => { lastView = rect; ch.send({ type: 'view', rect }); },
-    stop: () => { offHistory(); offState(); window.clearTimeout(timer); ch.close(); },
+    showView: (rect) => { lastView = rect; lastMap = editor.playerDoc.id; ch.send({ type: 'view', rect }); },
+    stop: () => { offChange(); window.clearTimeout(timer); ch.close(); },
   };
 }
 

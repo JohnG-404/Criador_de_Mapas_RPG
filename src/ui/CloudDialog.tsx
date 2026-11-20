@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { MapDocument } from '../core/doc/MapDocument';
+import type { Campaign } from '../core/doc/serialize';
 import * as cloud from '../online/cloud';
 import type { CloudMap } from '../online/cloud';
 
 interface Props {
-  doc: MapDocument;
-  onOpened: (doc: MapDocument, name: string) => void;
+  /** Lê a campanha na hora de salvar (um mapa ou vários ligados). */
+  campaign: () => Campaign;
+  onOpened: (c: Campaign, name: string) => void;
   onClose: () => void;
   notify: (text: string, error?: boolean) => void;
 }
@@ -13,7 +14,7 @@ interface Props {
 type CloudModule = typeof cloud;
 
 /** Salvar e abrir mapas na nuvem, para continuar em outro computador. */
-export function CloudDialog({ doc, onOpened, onClose, notify }: Props) {
+export function CloudDialog({ campaign, onOpened, onClose, notify }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [mod, setMod] = useState<CloudModule | null>(null);
   const [current, setCurrent] = useState<CloudMap | null>(null);
@@ -43,7 +44,7 @@ export function CloudDialog({ doc, onOpened, onClose, notify }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await mod.saveToCloud(doc, asNew);
+      await mod.saveToCloud(campaign(), asNew);
       refresh(mod);
       notify('Mapa salvo na nuvem');
     } catch (e) {

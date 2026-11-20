@@ -32,6 +32,8 @@ npm run build      # gera a versão final em dist/
 | Abrir e fechar portas | Selecionar (V): clique na porta |
 | Personagens de jogador | Selecione um token e marque "Personagem de jogador": o que ele enxerga é revelado na névoa (paredes e portas fechadas bloqueiam) |
 | Régua | Régua (M): arraste de uma célula a outra; Esc apaga |
+| Mapas ligados | Painel **Mapas da campanha**: **+ Adicionar mapa** cria outro mapa na mesma campanha. Clicar num mapa da lista abre só para você (os jogadores continuam onde estão); **Levar os jogadores para este mapa** muda a janela e a sala online deles |
+| Passagens | Passagem (`P`): clique numa célula para criar uma escada, porta ou portal que leva a outro mapa. No painel escolha o destino (ou **+ Novo mapa…**, que já cria a passagem de volta) e use **Atravessar**: o mestre, a janela dos jogadores e a sala online vão para o outro mapa, enquadrando a passagem de volta, e os personagens de jogador vão junto. Só o mestre vê o marcador. A campanha inteira fica num `.rpgmap` só (com um mapa, o arquivo é igual ao de antes) |
 | Notas do mestre | Nota (A): clique no mapa e escreva; só o mestre vê |
 | Camadas | Painel Camadas: olho oculta, cadeado trava |
 | Névoa de guerra | Névoa (N): Cobrir ou Revelar com o pincel, Alt inverte; botões Cobrir tudo e Revelar tudo |
@@ -58,6 +60,8 @@ src/core/     modelo e lógica pura (grid quadrado e hex, câmera, documento em 
 src/editor/   controlador do editor: estado, ferramentas e gestos
 src/render/   desenho do mapa com PixiJS
 src/ui/       interface em React
+src/desktop.ts  integração com o app de desktop (só é usada dentro do app)
+src-tauri/    app de desktop (Tauri 2): janela, ícones e instaladores
 e2e/          testes no navegador
 assets/       texturas e objetos (estilo escolhido: realista diurno)
 docs/         planejamento e propostas de estilo
@@ -67,3 +71,36 @@ tools/        scripts auxiliares (ex.: gerar as propostas de estilo)
 ## Prévia online (GitHub Pages)
 
 A cada push na `main`, o workflow `Deploy da prévia` publica o editor em https://johng-404.github.io/Criador_de_Mapas_RPG/.
+
+## App de desktop (Windows, Linux e macOS)
+
+O mesmo editor também roda como app instalado, feito com [Tauri 2](https://tauri.app). No Windows ele usa o WebView2 que já vem no sistema, então o instalador é pequeno (poucos MB) e o 3D usa a placa de vídeo normalmente.
+
+O que muda no app:
+
+- **Salvar e Exportar** abrem a janela "Salvar como" do sistema.
+- **Janela dos jogadores** abre como uma janela própria do app, que dá para arrastar para outro monitor ou TV. `F11` liga e desliga a tela cheia.
+- **Arquivos `.rpgmap`** ficam associados ao app: dois cliques num mapa abrem o Atlas Board com ele.
+- **Links de sala online e de nuvem** apontam para a versão web, para os jogadores abrirem no navegador.
+- O salvamento automático continua funcionando, guardado no próprio app.
+
+### Baixar os instaladores
+
+O workflow `App de desktop` gera os instaladores a cada push na `main` (e em PRs que mexem no app). Em **Actions → App de desktop → a execução mais recente → Artifacts**:
+
+- `atlas-board-windows`: `Atlas Board_x.y.z_x64-setup.exe` (recomendado) e o `.msi`
+- `atlas-board-linux`: `.AppImage`, `.deb` e `.rpm`
+- `atlas-board-macos`: `.dmg` universal (Intel e Apple Silicon)
+
+Os instaladores não têm assinatura digital, então o Windows SmartScreen pode avisar na primeira vez ("Mais informações → Executar assim mesmo"). No macOS, abra com o botão direito → Abrir.
+
+Enviar uma tag `v*` (por exemplo `v0.5.0`) cria um **rascunho** de release com os instaladores, que só fica público quando alguém publica pelo GitHub.
+
+### Rodar o app localmente
+
+Requer Node.js 22+ e [Rust](https://rustup.rs) (no Linux, também as bibliotecas do WebKitGTK; veja os [pré-requisitos do Tauri](https://tauri.app/start/prerequisites/)).
+
+```bash
+npm run desktop:dev     # abre o app em modo de desenvolvimento
+npm run desktop:build   # gera os instaladores em src-tauri/target/release/bundle/
+```

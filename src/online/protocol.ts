@@ -49,7 +49,7 @@ export function validRoomCode(code: string | null): code is string {
 }
 
 /**
- * O que os jogadores recebem: sem as notas do mestre e sem os tokens que
+ * O que os jogadores recebem: sem as notas do mestre, sem as passagens e sem os tokens que
  * não são de jogador escondidos pela névoa.
  */
 export function forPlayers(doc: MapDocument): MapFile {
@@ -58,5 +58,5 @@ export function forPlayers(doc: MapDocument): MapFile {
     const c = doc.grid.worldToCell({ x, y });
     return !!c && doc.fog.get(c.col, c.row) === FOG_HIDDEN;
   };
-  return { ...map, notes: [], tokens: map.tokens.filter((t) => t.pc || !hidden(t.x, t.y)) };
+  return { ...map, notes: [], links: [], tokens: map.tokens.filter((t) => t.pc || !hidden(t.x, t.y)) };
 }

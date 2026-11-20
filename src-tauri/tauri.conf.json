@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Atlas Board",
+  "version": "../package.json",
+  "identifier": "io.github.johng404.atlasboard",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Atlas Board",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 600,
+        "center": true,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "RolePlayingGame",
+    "shortDescription": "Editor de mapas para RPG de mesa",
+    "longDescription": "Atlas Board: editor de mapas para RPG de mesa em 2D e 3D, com névoa de guerra, tokens, janela dos jogadores e sala online.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["rpgmap"],
+        "name": "Mapa do Atlas Board",
+        "description": "Mapa do Atlas Board",
+        "role": "Editor",
+        "mimeType": "application/x-atlas-board-map"
+      }
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["PortugueseBR", "English"],
+        "displayLanguageSelector": false
+      },
+      "wix": {
+        "language": "pt-BR"
+      }
+    }
+  }
+}

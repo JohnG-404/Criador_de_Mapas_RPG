@@ -1,5 +1,5 @@
 import { MapDocument, type NewMapOptions } from './MapDocument';
-import type { CustomAsset, MapObject, Note, Token } from './objects';
+import type { CustomAsset, MapLink, MapObject, Note, Token } from './objects';
 import { DEFAULT_VISION, OBJECT_ASSETS } from './objects';
 import { styleField, type WallSegment } from './walls';
 import { cleanSheet, tokenTemplate } from './tokenTemplates';
@@ -9,6 +9,8 @@ import { clampLevel, ELEV_ZERO, hasRelief } from './elevation';
 export interface MapFile {
   format: typeof FORMAT;
   version: number;
+  /** Id do mapa na campanha (ausente em arquivos antigos). */
+  id?: string;
   options: NewMapOptions;
   /** Camadas de células comprimidas (RLE + base64). */
   terrain: string;
@@ -19,6 +21,8 @@ export interface MapFile {
   objects: MapObject[];
   tokens: Token[];
   notes?: Note[];
+  /** Passagens para outros mapas da campanha. */
+  links?: MapLink[];
   /** Imagens importadas (só as usadas por algum objeto). */
   assets?: CustomAsset[];
 }
@@ -34,6 +38,7 @@ export function serializeDoc(doc: MapDocument): MapFile {
   return {
     format: FORMAT,
     version: VERSION,
+    id: doc.id,
     options: { ...doc.options },
     terrain: encodeLayer(doc.terrain.toArray()),
     fog: encodeLayer(doc.fog.toArray()),
@@ -42,6 +47,7 @@ export function serializeDoc(doc: MapDocument): MapFile {
     objects: doc.objects.all(),
     tokens: doc.tokens.all(),
     notes: doc.notes.all(),
+    ...(doc.links.size ? { links: doc.links.all() } : {}),
     assets: usedAssets(doc),
   };
 }
@@ -75,6 +81,7 @@ export function parseMap(text: string | MapFile): MapDocument {
     cellMeters: Number(o.cellMeters) > 0 ? Number(o.cellMeters) : 1.5,
   };
   const doc = new MapDocument(options);
+  if (validMapId(f.id)) doc.id = f.id;
   const n = options.cols * options.rows;
   doc.terrain.loadArray(decodeLayer(f.terrain, n));
   doc.fog.loadArray(f.fog ? decodeLayer(f.fog, n) : new Uint8Array(n));
@@ -125,7 +132,81 @@ export function parseMap(text: string | MapFile): MapDocument {
       doc.notes.put(n.id, { id: n.id, x: n.x, y: n.y, text: typeof n.text === 'string' ? n.text.slice(0, 2000) : '' });
     }
   }
+  for (const l of arr(f.links)) {
+    if (typeof l?.id === 'string' && finite(l.x) && finite(l.y)) {
+      doc.links.put(l.id, {
+        id: l.id, x: l.x, y: l.y,
+        target: validMapId(l.target) ? l.target : '',
+        label: typeof l.label === 'string' ? l.label.slice(0, 40) : '',
+      });
+    }
+  }
   return doc;
+}
+
+function validMapId(v: unknown): v is string {
+  return typeof v === 'string' && /^[\w-]{1,40}$/.test(v);
+}
+
+// ---- campanha: vários mapas ligados por passagens, num arquivo só
+
+/** Arquivo com vários mapas. Com um mapa só, o arquivo continua sendo um MapFile comum. */
+export interface CampaignFile {
+  format: typeof CAMPAIGN_FORMAT;
+  version: number;
+  /** Mapa aberto no editor. */
+  active: string;
+  /** Mapa que os jogadores estão vendo. */
+  players: string;
+  maps: MapFile[];
+}
+
+export interface Campaign {
+  maps: MapDocument[];
+  active: string;
+  players: string;
+}
+
+export const CAMPAIGN_FORMAT = 'atlas-board-campaign';
+const MAX_MAPS = 100;
+
+export function serializeCampaign(c: Campaign): MapFile | CampaignFile {
+  if (c.maps.length === 1) return serializeDoc(c.maps[0]);
+  return { format: CAMPAIGN_FORMAT, version: VERSION, active: c.active, players: c.players, maps: c.maps.map(serializeDoc) };
+}
+
+export function campaignToJson(c: Campaign) {
+  return JSON.stringify(serializeCampaign(c));
+}
+
+/** Lê um .rpgmap com um mapa ou com uma campanha inteira. */
+export function parseCampaign(text: string | MapFile | CampaignFile): Campaign {
+  let f: MapFile | CampaignFile;
+  try {
+    f = typeof text === 'string' ? JSON.parse(text) : text;
+  } catch {
+    throw new Error('O arquivo não é um mapa do Atlas Board (JSON inválido).');
+  }
+  if (f?.format !== CAMPAIGN_FORMAT) {
+    const doc = parseMap(f as MapFile);
+    return { maps: [doc], active: doc.id, players: doc.id };
+  }
+  if (typeof f.version !== 'number' || f.version > VERSION) {
+    throw new Error('Este mapa foi salvo numa versão mais nova do Atlas Board.');
+  }
+  const list = arr(f.maps).slice(0, MAX_MAPS);
+  if (!list.length) throw new Error('A campanha não tem nenhum mapa.');
+  const maps: MapDocument[] = [];
+  const ids = new Set<string>();
+  for (const m of list) {
+    const doc = parseMap(m);
+    // Ids repetidos fariam duas passagens apontarem para o mesmo lugar por engano.
+    if (ids.has(doc.id)) continue;
+    ids.add(doc.id);
+    maps.push(doc);
+  }
+  const pick = (id: unknown) => (typeof id === 'string' && ids.has(id) ? id : maps[0].id);
+  return { maps, active: pick(f.active), players: pick(f.players) };
 }
 
 /**

@@ -294,7 +294,7 @@ export class MapView {
     content.onChange = () => this.invalidate();
     content.start();
     this.contentHolder.addChild(content.objects, content.walls, content.tokens);
-    this.notesHolder.addChild(content.notes);
+    this.notesHolder.addChild(content.links, content.notes);
     const fog = new FogRenderer(this.doc, this.mode);
     fog.buildAll();
     fog.onChange = () => this.invalidate();
@@ -305,9 +305,11 @@ export class MapView {
     this.gridCache = null;
     this.mapCacheZoom = 0;
     this.hoverCell = null;
-    // Só reenquadra quando o tamanho do mapa muda (a janela do jogador recebe o mapa a cada edição).
-    const size = `${this.doc.grid.kind}:${this.doc.grid.cols}x${this.doc.grid.rows}`;
-    if (size !== this.fittedSize || this.mode === 'gm') this.fitToMap();
+    // Só reenquadra quando o mapa muda (a janela do jogador recebe o mapa a cada edição).
+    const size = `${this.doc.id}:${this.doc.grid.kind}:${this.doc.grid.cols}x${this.doc.grid.rows}`;
+    const focus = this.mode === 'gm' ? this.editor.takeFocus() : null;
+    if (focus) this.showRect(focus);
+    else if (size !== this.fittedSize || this.mode === 'gm') this.fitToMap();
     else this.afterCameraChange();
     this.fittedSize = size;
   }
@@ -346,6 +348,7 @@ export class MapView {
       this.content.objects.visible = layers.objects.visible;
       this.content.tokens.visible = layers.tokens.visible;
       this.content.notes.visible = layers.notes.visible;
+      this.content.links.visible = layers.links.visible;
     }
   }
 

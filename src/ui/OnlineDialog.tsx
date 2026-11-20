@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { shareBaseUrl } from '../desktop';
 import { ROOM_QUERY } from '../editor/playerSync';
 
 interface Props {
@@ -11,7 +12,7 @@ interface Props {
 }
 
 export function roomLink(code: string) {
-  return `${location.origin}${location.pathname}?${ROOM_QUERY}=${code}`;
+  return `${shareBaseUrl()}?${ROOM_QUERY}=${code}`;
 }
 
 /** Sala online: os jogadores abrem o link e veem o mapa ao vivo, cada um no seu computador. */
