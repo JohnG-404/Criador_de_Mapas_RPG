@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { TERRAINS } from '../core/doc/terrain';
-import { parseMap } from '../core/doc/serialize';
+import { parseCampaign } from '../core/doc/serialize';
 import { ELEV_ZERO } from '../core/doc/elevation';
 import type { Cell } from '../core/grid/GridSystem';
 import { initialDesktopMap, isDesktop, openDesktopPlayerWindow } from '../desktop';
@@ -28,7 +28,7 @@ export function App() {
   const [editor] = useState(() => {
     const ed = new Editor();
     const saved = loadAutosave();
-    if (saved) ed.loadDocument(saved);
+    if (saved) ed.loadCampaign(saved);
     return ed;
   });
   const state = useSyncExternalStore(editor.subscribe, editor.getState);
@@ -92,7 +92,7 @@ export function App() {
 
   const save = useCallback(async () => {
     try {
-      if (await saveMapFile(editor.doc)) notify('Mapa salvo');
+      if (await saveMapFile(editor.campaign())) notify(editor.maps.length > 1 ? `Campanha salva (${editor.maps.length} mapas)` : 'Mapa salvo');
     } catch {
       notify('Não foi possível salvar o arquivo.', true);
     }
@@ -106,7 +106,7 @@ export function App() {
     if (!ref) return;
     history.replaceState(null, '', location.pathname);
     loadFromCloud(ref.id, ref.token)
-      .then((doc) => { editor.loadDocument(doc); notify(`Aberto da nuvem: ${doc.options.name}`); })
+      .then((c) => { editor.loadCampaign(c); notify(`Aberto da nuvem: ${editor.doc.options.name}`); })
       .catch((e: Error) => notify(e.message || 'Não foi possível abrir o mapa da nuvem.', true));
   }, [editor, notify]);
 
@@ -116,7 +116,7 @@ export function App() {
     initialDesktopMap()
       .then((file) => {
         if (!file) return;
-        editor.loadDocument(parseMap(file.text));
+        editor.loadCampaign(parseCampaign(file.text));
         setCurrentCloudMap(null);
         notify(`Aberto: ${file.name}`);
       })
@@ -188,7 +188,7 @@ export function App() {
               e.target.value = '';
               if (!file) return;
               try {
-                editor.loadDocument(await readMapFile(file));
+                editor.loadCampaign(await readMapFile(file));
                 setCurrentCloudMap(null);
                 notify(`Aberto: ${file.name}`);
               } catch (err) {
@@ -212,7 +212,9 @@ export function App() {
           <button
             onClick={() => {
               const rect = viewRef.current?.visibleRect();
-              if (rect && broadcastRef.current) {
+              if (editor.doc !== editor.playerDoc) {
+                notify(`Os jogadores estão em ${editor.playerDoc.options.name}. Use "Levar os jogadores para este mapa" primeiro.`, true);
+              } else if (rect && broadcastRef.current) {
                 broadcastRef.current.showView(rect);
                 roomRef.current?.showView(rect);
                 notify('Os jogadores agora veem esta área');
@@ -283,10 +285,10 @@ export function App() {
       )}
       {cloudOpen && (
         <CloudDialog
-          doc={doc}
+          campaign={() => editor.campaign()}
           notify={notify}
           onClose={closeCloud}
-          onOpened={(d, name) => { editor.loadDocument(d); setCloudOpen(false); notify(`Aberto da nuvem: ${name}`); }}
+          onOpened={(c, name) => { editor.loadCampaign(c); setCloudOpen(false); notify(`Aberto da nuvem: ${name}`); }}
         />
       )}
       {onlineOpen && (
@@ -314,6 +316,9 @@ export function App() {
       )}
       {newMapOpen && (
         <NewMapDialog
+          warning={editor.maps.length > 1
+            ? `A campanha atual (${editor.maps.length} mapas) será substituída. Use Salvar antes se quiser guardá-la, ou crie o mapa em Mapas da campanha.`
+            : undefined}
           onCancel={() => setNewMapOpen(false)}
           onCreate={(o) => {
             editor.newMap(o);

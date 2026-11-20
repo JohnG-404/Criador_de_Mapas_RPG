@@ -1,16 +1,15 @@
-import type { MapDocument } from '../core/doc/MapDocument';
-import { docToJson, mapFileName, MAP_EXTENSION, parseMap } from '../core/doc/serialize';
+import { campaignToJson, mapFileName, MAP_EXTENSION, parseCampaign, type Campaign } from '../core/doc/serialize';
 import { desktopSaveBlob, isDesktop } from '../desktop';
 import type { Editor } from './Editor';
 
 const AUTOSAVE_KEY = 'atlas-board:autosave';
 const AUTOSAVE_DELAY_MS = 800;
 
-/** Lê o salvamento automático, se houver um válido. */
-export function loadAutosave(): MapDocument | null {
+/** Lê o salvamento automático (um mapa ou a campanha inteira), se houver um válido. */
+export function loadAutosave(): Campaign | null {
   try {
     const text = localStorage.getItem(AUTOSAVE_KEY);
-    return text ? parseMap(text) : null;
+    return text ? parseCampaign(text) : null;
   } catch {
     return null;
   }
@@ -26,7 +25,7 @@ export function startAutosave(editor: Editor, onSaved?: (ok: boolean) => void) {
     window.clearTimeout(timer);
     timer = 0;
     try {
-      localStorage.setItem(AUTOSAVE_KEY, docToJson(editor.doc));
+      localStorage.setItem(AUTOSAVE_KEY, campaignToJson(editor.campaign()));
       onSaved?.(true);
     } catch {
       // Cota cheia ou armazenamento bloqueado: o mapa continua na memória.
@@ -37,17 +36,11 @@ export function startAutosave(editor: Editor, onSaved?: (ok: boolean) => void) {
     window.clearTimeout(timer);
     timer = window.setTimeout(save, AUTOSAVE_DELAY_MS);
   };
-  let docVersion = editor.getState().docVersion;
-  const offHistory = editor.history.onChange(schedule);
-  const offState = editor.subscribe(() => {
-    const v = editor.getState().docVersion;
-    if (v !== docVersion) { docVersion = v; schedule(); }
-  });
+  const offChange = editor.onDocChange(schedule);
   const onHide = () => { if (timer) save(); };
   window.addEventListener('pagehide', onHide);
   return () => {
-    offHistory();
-    offState();
+    offChange();
     window.removeEventListener('pagehide', onHide);
     if (timer) save();
   };
@@ -84,13 +77,14 @@ export async function saveBlob(blob: Blob, name: string, type: { description: st
   return true;
 }
 
-export function saveMapFile(doc: MapDocument) {
-  return saveBlob(new Blob([docToJson(doc)], { type: 'application/json' }), mapFileName(doc.options.name), {
+/** Salva o .rpgmap: um mapa só, ou a campanha inteira quando há mapas ligados. O nome vem do primeiro mapa. */
+export function saveMapFile(c: Campaign) {
+  return saveBlob(new Blob([campaignToJson(c)], { type: 'application/json' }), mapFileName(c.maps[0].options.name), {
     description: 'Mapa do Atlas Board',
     accept: { 'application/json': [MAP_EXTENSION] },
   });
 }
 
-export async function readMapFile(file: File): Promise<MapDocument> {
-  return parseMap(await file.text());
+export async function readMapFile(file: File): Promise<Campaign> {
+  return parseCampaign(await file.text());
 }

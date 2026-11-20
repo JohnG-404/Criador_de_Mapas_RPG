@@ -32,6 +32,8 @@ npm run build      # gera a versão final em dist/
 | Abrir e fechar portas | Selecionar (V): clique na porta |
 | Personagens de jogador | Selecione um token e marque "Personagem de jogador": o que ele enxerga é revelado na névoa (paredes e portas fechadas bloqueiam) |
 | Régua | Régua (M): arraste de uma célula a outra; Esc apaga |
+| Mapas ligados | Painel **Mapas da campanha**: **+ Adicionar mapa** cria outro mapa na mesma campanha. Clicar num mapa da lista abre só para você (os jogadores continuam onde estão); **Levar os jogadores para este mapa** muda a janela e a sala online deles |
+| Passagens | Passagem (`P`): clique numa célula para criar uma escada, porta ou portal que leva a outro mapa. No painel escolha o destino (ou **+ Novo mapa…**, que já cria a passagem de volta) e use **Atravessar**: o mestre, a janela dos jogadores e a sala online vão para o outro mapa, enquadrando a passagem de volta, e os personagens de jogador vão junto. Só o mestre vê o marcador. A campanha inteira fica num `.rpgmap` só (com um mapa, o arquivo é igual ao de antes) |
 | Notas do mestre | Nota (A): clique no mapa e escreva; só o mestre vê |
 | Camadas | Painel Camadas: olho oculta, cadeado trava |
 | Névoa de guerra | Névoa (N): Cobrir ou Revelar com o pincel, Alt inverte; botões Cobrir tudo e Revelar tudo |
