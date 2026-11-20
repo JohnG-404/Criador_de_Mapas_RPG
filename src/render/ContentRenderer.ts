@@ -1,4 +1,4 @@
-import { Assets, Container, FillPattern, Graphics, Matrix, Sprite, Text, type Texture } from 'pixi.js';
+import { Assets, Container, FillPattern, Graphics, Matrix, Sprite, Text, Texture } from 'pixi.js';
 import type { MapDocument } from '../core/doc/MapDocument';
 import { objectAsset, type MapObject, type Token } from '../core/doc/objects';
 import { wallStyleOf, type WallSegment } from '../core/doc/walls';
@@ -58,6 +58,8 @@ export class ContentRenderer {
     this.unsub.push(this.doc.notes.onChange(() => { this.syncNotes(); this.onChange?.(); }));
     this.unsub.push(this.doc.walls.onChange(() => { this.drawWalls(); this.onChange?.(); }));
     this.unsub.push(this.doc.objects.onChange(() => { this.syncObjects(); this.onChange?.(); }));
+    this.unsub.push(this.doc.assets.onChange(() => this.loadCustomAssets()));
+    this.loadCustomAssets();
     this.unsub.push(this.doc.tokens.onChange(() => { this.syncTokens(); this.onChange?.(); }));
   }
 
@@ -67,6 +69,25 @@ export class ContentRenderer {
     this.walls.destroy({ children: true });
     this.tokens.destroy({ children: true });
     this.notes.destroy({ children: true });
+  }
+
+  /** Decodifica as imagens importadas pelo usuário e cria as texturas. */
+  private loadingCustom = new Set<string>();
+  private loadCustomAssets() {
+    for (const a of this.doc.assets.all()) {
+      if (this.objectTextures.has(a.id) || this.loadingCustom.has(a.id)) continue;
+      this.loadingCustom.add(a.id);
+      const img = new Image();
+      img.src = a.data;
+      img.decode().then(() => {
+        const tex = Texture.from(img);
+        tex.source.scaleMode = 'linear';
+        this.objectTextures.set(a.id, tex);
+        this.loadingCustom.delete(a.id);
+        this.syncObjects();
+        this.onChange?.();
+      }).catch(() => this.loadingCustom.delete(a.id));
+    }
   }
 
   // ---- notas do mestre

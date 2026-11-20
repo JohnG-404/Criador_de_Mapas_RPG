@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { OBJECT_ASSETS, TOKEN_COLORS } from '../core/doc/objects';
+import { OBJECT_ASSETS, TOKEN_COLORS, objectAsset } from '../core/doc/objects';
+import { readImageAsset } from './importImage';
 import { TERRAINS } from '../core/doc/terrain';
 import { LAYERS, MAX_BRUSH, MIN_BRUSH, TOOLS, type Editor, type EditorState, type ToolId } from '../editor/Editor';
 import { OBJECT_TEXTURE_URLS, WALL_TEXTURE_URLS } from '../render/objectTextures';
@@ -192,6 +193,7 @@ export function ToolPanel({ editor, state }: { editor: Editor; state: EditorStat
               </button>
             ))}
           </div>
+          <CustomAssets editor={editor} state={state} />
           <p className="help">Encaixa a cada meia célula. Segure Shift para posição livre.</p>
         </section>
       )}
@@ -273,7 +275,7 @@ function SelectionPanel({ editor }: { editor: Editor; state: EditorState }) {
     );
   }
   if (obj) {
-    const asset = OBJECT_ASSETS.find((a) => a.key === obj.asset);
+    const asset = objectAsset(obj.asset);
     return (
       <section data-testid="selection-panel">
         <h2>{asset?.name ?? 'Objeto'}</h2>
@@ -356,5 +358,62 @@ function NotePanel({ editor }: { editor: Editor }) {
       <p className="help">A primeira linha aparece no mapa. Só o mestre vê.</p>
       <button className="danger" onMouseDown={(e) => e.preventDefault()} onClick={() => editor.deleteSelection()}>Apagar nota</button>
     </section>
+  );
+}
+
+/** Imagens próprias (PNG, WebP ou JPEG) guardadas dentro do mapa. */
+function CustomAssets({ editor, state }: { editor: Editor; state: EditorState }) {
+  const [, bump] = useState(0);
+  const [error, setError] = useState('');
+  const input = useRef<HTMLInputElement>(null);
+  const doc = editor.doc;
+  useEffect(() => doc.assets.onChange(() => bump((n) => n + 1)), [doc]);
+  const list = doc.assets.all();
+
+  async function onFiles(files: FileList | null) {
+    setError('');
+    for (const file of Array.from(files ?? [])) {
+      try {
+        editor.importAsset(await readImageAsset(file));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Não foi possível ler a imagem.');
+      }
+    }
+    if (input.current) input.current.value = '';
+  }
+
+  return (
+    <>
+      <h2>Minhas imagens</h2>
+      {list.length > 0 && (
+        <div className="objects" role="radiogroup" aria-label="Minhas imagens">
+          {list.map((a) => (
+            <button
+              key={a.key}
+              role="radio"
+              aria-checked={state.objectAsset === a.key}
+              className={state.objectAsset === a.key ? 'active' : ''}
+              onClick={() => editor.setObjectAsset(a.key)}
+              title={a.name}
+            >
+              <img src={a.data} alt="" />
+              <span>{a.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <button className="import-image" onClick={() => input.current?.click()}>Importar imagem…</button>
+      <input
+        ref={input}
+        type="file"
+        accept="image/png,image/webp,image/jpeg"
+        multiple
+        hidden
+        data-testid="import-image"
+        onChange={(e) => onFiles(e.target.files)}
+      />
+      {error && <p className="help error" role="alert">{error}</p>}
+      <p className="help">A imagem fica salva dentro do mapa. PNG ou WebP com fundo transparente funcionam melhor.</p>
+    </>
   );
 }

@@ -36,7 +36,8 @@ npm run build      # gera a versão final em dist/
 | Camadas | Painel Camadas: olho oculta, cadeado trava |
 | Névoa de guerra | Névoa (N): Cobrir ou Revelar com o pincel, Alt inverte; botões Cobrir tudo e Revelar tudo |
 | Salvar / abrir | Botões Salvar e Abrir (Ctrl+S / Ctrl+O), arquivo `.rpgmap`. O mapa também é salvo sozinho no navegador |
-| Exportar imagem | Exportar PNG (mapa inteiro, sem névoa, com o grid se ele estiver ligado) |
+| Exportar | Botão **Exportar**: imagem PNG, arquivo de mesa virtual `.dd2vtt` (Universal VTT, com paredes, portas e luzes, abre no Foundry, Roll20, Owlbear Rodeo e outros) ou PDF em escala real dividido em folhas A4 (imprima em 100%) |
+| Imagem própria | Ferramenta Objeto (`O`) e **Importar imagem…** (PNG, WebP ou JPEG). A imagem fica guardada dentro do arquivo `.rpgmap` |
 | Enquadrar os jogadores | Mostrar esta área: a janela dos jogadores passa a mostrar o que você está vendo |
 | Gerar mapa | Botão Gerar: masmorra (só grid quadrado), caverna ou região, a partir de uma semente. Substitui terreno, paredes e objetos (os tokens ficam) e dá para desfazer |
 | Mostrar aos jogadores | Janela dos jogadores: abre uma janela só com o mapa e a névoa opaca, atualizada a cada edição (arraste para outro monitor ou TV) |

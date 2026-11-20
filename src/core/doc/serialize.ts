@@ -1,5 +1,5 @@
 import { MapDocument, type NewMapOptions } from './MapDocument';
-import type { MapObject, Note, Token } from './objects';
+import type { CustomAsset, MapObject, Note, Token } from './objects';
 import { DEFAULT_VISION, OBJECT_ASSETS } from './objects';
 import { styleField, type WallSegment } from './walls';
 
@@ -15,12 +15,16 @@ export interface MapFile {
   objects: MapObject[];
   tokens: Token[];
   notes?: Note[];
+  /** Imagens importadas (só as usadas por algum objeto). */
+  assets?: CustomAsset[];
 }
 
 export const FORMAT = 'atlas-board-map';
 export const VERSION = 1;
 export const MAP_EXTENSION = '.rpgmap';
 const MAX_SIDE = 1000;
+/** Limite por imagem importada (~3 MB em base64). */
+const MAX_ASSET_CHARS = 4_000_000;
 
 export function serializeDoc(doc: MapDocument): MapFile {
   return {
@@ -33,6 +37,7 @@ export function serializeDoc(doc: MapDocument): MapFile {
     objects: doc.objects.all(),
     tokens: doc.tokens.all(),
     notes: doc.notes.all(),
+    assets: usedAssets(doc),
   };
 }
 
@@ -75,6 +80,18 @@ export function parseMap(text: string | MapFile): MapDocument {
     }
   }
   const assets = new Set(OBJECT_ASSETS.map((a) => a.key));
+  for (const a of arr(f.assets)) {
+    if (
+      typeof a?.key === 'string' && /^img-[\w-]{1,60}$/.test(a.key) &&
+      typeof a.data === 'string' && /^data:image\/(png|webp|jpeg);base64,[A-Za-z0-9+/=]+$/.test(a.data) && a.data.length < MAX_ASSET_CHARS &&
+      finite(a.w) && finite(a.h) && a.w > 0 && a.h > 0 && a.w <= 40 && a.h <= 40
+    ) {
+      const name = typeof a.name === 'string' ? a.name.slice(0, 40) : 'Imagem';
+      doc.assets.put(a.key, { id: a.key, key: a.key, name, w: a.w, h: a.h, data: a.data });
+      assets.add(a.key);
+    }
+  }
+  doc.assets.emit();
   for (const ob of arr(f.objects)) {
     if (typeof ob?.id === 'string' && assets.has(ob.asset) && finite(ob.x) && finite(ob.y)) {
       doc.objects.put(ob.id, { id: ob.id, asset: ob.asset, x: ob.x, y: ob.y, rot: finite(ob.rot) ? ob.rot : 0, scale: finite(ob.scale) && ob.scale > 0 ? ob.scale : 1 });
@@ -171,4 +188,9 @@ function isPoint(p: unknown): p is { x: number; y: number } {
 export function mapFileName(name: string) {
   const base = name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase();
   return (base || 'mapa') + MAP_EXTENSION;
+}
+
+function usedAssets(doc: MapDocument): CustomAsset[] {
+  const used = new Set(doc.objects.all().map((o) => o.asset));
+  return doc.assets.all().filter((a) => used.has(a.key));
 }

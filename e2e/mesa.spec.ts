@@ -91,7 +91,8 @@ test('salvamento automático recupera o mapa ao recarregar', async ({ page }) =>
 
 test('exporta PNG do mapa', async ({ page }) => {
   const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Exportar PNG' }).click();
+  await page.getByRole('button', { name: 'Exportar', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Exportar' }).click();
   const file = await download;
   expect(file.suggestedFilename()).toBe('mapa-sem-titulo.png');
   const buf = readFileSync((await file.path())!);
@@ -132,4 +133,84 @@ test('gera uma masmorra com semente e desfaz', async ({ page }) => {
   await page.getByLabel('Semente').fill('dragao');
   await page.getByRole('button', { name: 'Gerar', exact: true }).last().click();
   await expect(counts).toHaveText(first!);
+});
+
+test('exporta para mesa virtual (.dd2vtt) com paredes e imagem', async ({ page }) => {
+  await page.evaluate(() => {
+    const { editor } = (window as unknown as { atlas: { editor: { generate(k: string, s: number): void } } }).atlas;
+    editor.generate('dungeon', 42);
+  });
+  await page.getByRole('button', { name: 'Exportar', exact: true }).click();
+  await page.getByLabel('Mesa virtual (.dd2vtt)').check();
+  const download = page.waitForEvent('download');
+  await page.getByRole('dialog').getByRole('button', { name: 'Exportar' }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe('mapa-sem-titulo.dd2vtt');
+  const json = JSON.parse(readFileSync((await file.path())!, 'utf8'));
+  expect(json.resolution.map_size).toEqual({ x: 60, y: 40 });
+  expect(json.resolution.pixels_per_grid).toBe(100);
+  expect(json.line_of_sight.length).toBeGreaterThan(10);
+  expect(json.portals.length).toBeGreaterThan(0);
+  const png = Buffer.from(json.image, 'base64');
+  expect(png.subarray(1, 4).toString()).toBe('PNG');
+  expect(png.readUInt32BE(16)).toBe(6000);
+});
+
+test('exporta PDF em escala real dividido em folhas', async ({ page }) => {
+  await page.getByRole('button', { name: 'Exportar', exact: true }).click();
+  await page.getByLabel('PDF para imprimir').check();
+  await expect(page.getByRole('dialog')).toContainText('36 folhas A4');
+  const download = page.waitForEvent('download');
+  await page.getByRole('dialog').getByRole('button', { name: 'Exportar' }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe('mapa-sem-titulo.pdf');
+  const pdf = readFileSync((await file.path())!).toString('latin1');
+  expect(pdf.startsWith('%PDF-1.4')).toBe(true);
+  expect(pdf).toContain('/Count 36');
+  expect(pdf).toContain('/Filter /DCTDecode');
+});
+
+test('importa imagem própria, coloca no mapa e salva junto', async ({ page }, info) => {
+  // Gera um PNG transparente de 300×150 com um círculo.
+  const b64 = await page.evaluate(() => {
+    const c = document.createElement('canvas');
+    c.width = 300; c.height = 150;
+    const g = c.getContext('2d')!;
+    g.fillStyle = '#8a3';
+    g.beginPath(); g.ellipse(150, 75, 140, 70, 0, 0, Math.PI * 2); g.fill();
+    return c.toDataURL('image/png').split(',')[1];
+  });
+  await page.keyboard.press('o');
+  await page.getByTestId('import-image').setInputFiles({ name: 'Arbusto grande.png', mimeType: 'image/png', buffer: Buffer.from(b64, 'base64') });
+  const mine = page.getByRole('radiogroup', { name: 'Minhas imagens' }).getByRole('radio', { name: 'Arbusto grande' });
+  await expect(mine).toHaveAttribute('aria-checked', 'true');
+
+  await page.evaluate(() => {
+    const { editor } = (window as unknown as { atlas: Atlas }).atlas;
+    editor.pointerDown({ x: 320, y: 320 });
+    editor.pointerUp();
+  });
+  await expect(page.getByTestId('content-counts')).toContainText('1 objeto');
+
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Salvar' }).click();
+  const path = info.outputPath('img.rpgmap');
+  await (await download).saveAs(path);
+  const json = JSON.parse(readFileSync(path, 'utf8'));
+  expect(json.assets).toHaveLength(1);
+  expect(json.assets[0]).toMatchObject({ name: 'Arbusto grande', w: 2, h: 1 });
+  expect(json.assets[0].data).toMatch(/^data:image\/(webp|png);base64,/);
+  expect(json.objects[0].asset).toBe(json.assets[0].key);
+
+  await page.getByRole('button', { name: 'Novo mapa' }).click();
+  await page.getByRole('button', { name: 'Criar mapa' }).click();
+  await expect(page.getByTestId('content-counts')).toContainText('0 objetos');
+  await page.getByTestId('open-file').setInputFiles({ name: 'img.rpgmap', mimeType: 'application/json', buffer: readFileSync(path) });
+  await expect(page.getByTestId('content-counts')).toContainText('1 objeto');
+});
+
+test('recusa arquivo que não é imagem', async ({ page }) => {
+  await page.keyboard.press('o');
+  await page.getByTestId('import-image').setInputFiles({ name: 'x.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') });
+  await expect(page.getByRole('alert')).toContainText('PNG, WebP ou JPEG');
 });

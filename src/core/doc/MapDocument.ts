@@ -2,7 +2,7 @@ import { HexGrid } from '../grid/HexGrid';
 import type { GridKind, GridSystem } from '../grid/GridSystem';
 import { SquareGrid } from '../grid/SquareGrid';
 import { ItemLayer } from './ItemLayer';
-import type { MapObject, Note, Token } from './objects';
+import { registerCustomAssets, type CustomAsset, type MapObject, type Note, type Token } from './objects';
 import { TerrainLayer } from './TerrainLayer';
 import type { WallSegment } from './walls';
 
@@ -29,6 +29,8 @@ export class MapDocument {
   readonly objects = new ItemLayer<MapObject>();
   readonly tokens = new ItemLayer<Token>();
   readonly notes = new ItemLayer<Note>();
+  /** Imagens importadas usadas pelos objetos deste mapa. */
+  readonly assets = new ItemLayer<CustomAsset>();
   /** Névoa de guerra: 1 = escondido dos jogadores, 0 = visível. Começa toda visível. */
   readonly fog: TerrainLayer;
 
@@ -37,5 +39,6 @@ export class MapDocument {
     this.grid = gridKind === 'hex' ? new HexGrid(cols, rows, DEFAULT_CELL_PX) : new SquareGrid(cols, rows, DEFAULT_CELL_PX);
     this.terrain = new TerrainLayer(cols, rows, options.fill);
     this.fog = new TerrainLayer(cols, rows, FOG_CLEAR);
+    this.assets.onChange(() => registerCustomAssets(this.assets.all()));
   }
 }
