@@ -95,7 +95,7 @@ O workflow `App de desktop` gera os instaladores a cada push na `main` (e em PRs
 
 Os instaladores não têm assinatura digital, então o Windows SmartScreen pode avisar na primeira vez ("Mais informações → Executar assim mesmo"). No macOS, abra com o botão direito → Abrir.
 
-As versões publicadas ficam em [Releases](https://github.com/JohnG-404/Criador_de_Mapas_RPG/releases). Enviar uma tag `v*` (por exemplo `v0.5.0`) publica uma release nova com os instaladores dos três sistemas. A versão vem do `package.json` (e do `src-tauri/Cargo.toml`).
+As versões publicadas ficam em [Releases](https://github.com/JohnG-404/Criador_de_Mapas_RPG/releases). Enviar uma tag `v*` (por exemplo `v0.5.0`) publica uma release nova com os instaladores dos três sistemas. O mesmo vale para **Actions → App de desktop → Run workflow** com "Publicar uma release" marcado, que cria a tag sozinho. A versão vem do `package.json` (e do `src-tauri/Cargo.toml`).
 
 ### Rodar o app localmente
 
