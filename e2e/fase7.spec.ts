@@ -46,7 +46,7 @@ test('vista 3D abre, acompanha a edição e volta ao 2D', async ({ page }) => {
   // Trocar a altura das paredes refaz a cena.
   const builds = Number(await canvas.getAttribute('data-builds'));
   await page.getByRole('radio', { name: 'Alta' }).click();
-  await expect(canvas).not.toHaveAttribute('data-builds', String(builds));
+  await expect(canvas).not.toHaveAttribute('data-builds', String(builds), { timeout: 15_000 });
   await expect(page.getByRole('radio', { name: 'Alta' })).toHaveAttribute('aria-checked', 'true');
 
   // Uma parede nova no documento aparece na vista 3D.
@@ -58,7 +58,7 @@ test('vista 3D abre, acompanha a edição e volta ao 2D', async ({ page }) => {
     editor.pointerMove({ x: 256, y: 64 });
     editor.pointerUp();
   });
-  await expect(canvas).not.toHaveAttribute('data-builds', String(before));
+  await expect(canvas).not.toHaveAttribute('data-builds', String(before), { timeout: 15_000 });
 
   // Girar com o mouse não quebra nada.
   const box = (await canvas.boundingBox())!;

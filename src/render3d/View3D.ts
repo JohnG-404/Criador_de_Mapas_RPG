@@ -259,18 +259,20 @@ export class View3D {
   }
 
   private addGround(s: SceneData, tex: Texture) {
-    const segX = Math.min(400, Math.ceil(s.width * 2));
-    const segZ = Math.min(400, Math.ceil(s.depth * 2));
+    // Malha subdividida só quando há relevo ou água; senão um plano basta.
+    const detailed = s.hasRelief || s.hasWater;
+    const segX = detailed ? Math.min(400, Math.ceil(s.width * 2)) : 1;
+    const segZ = detailed ? Math.min(400, Math.ceil(s.depth * 2)) : 1;
     const g = new PlaneGeometry(s.width, s.depth, segX, segZ);
     g.rotateX(-Math.PI / 2);
     g.translate(s.width / 2, 0, s.depth / 2);
-    const h = groundHeights(this.doc, segX, segZ);
+    const h = detailed ? groundHeights(this.doc, segX, segZ) : new Float32Array((segX + 1) * (segZ + 1));
     const pos = g.attributes.position;
     for (let i = 0; i < pos.count; i++) pos.setY(i, h[i]);
     g.computeVertexNormals();
     const ground = new Mesh(g, new MeshStandardMaterial({ map: tex, roughness: 0.95 }));
     ground.receiveShadow = true;
-    ground.castShadow = true;
+    ground.castShadow = s.hasRelief;
     this.world.add(ground);
 
     // Laterais do tabuleiro: uma faixa em cada borda, do chão até o fundo.

@@ -75,6 +75,8 @@ export interface SceneData {
   water: Array<{ poly: Array<[number, number]>; y: number }>;
   /** Menor altura do chão (para o fundo do tabuleiro). */
   minHeight: number;
+  /** Algum relevo pintado? Sem relevo e sem água o chão é um plano simples. */
+  hasRelief: boolean;
 }
 
 /**
@@ -211,9 +213,11 @@ export function buildSceneData(doc: MapDocument, wallHeight: WallHeight = 'media
   const { cols, rows } = doc.grid;
   const water: SceneData['water'] = [];
   let minHeight = 0;
+  let hasRelief = false;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const level = doc.elevation.get(c, r) - ELEV_ZERO;
+      if (level) hasRelief = true;
       minHeight = Math.min(minHeight, level * LEVEL_HEIGHT - WATER_DEPTH);
       if (doc.terrain.get(c, r) !== WATER_TERRAIN) continue;
       const poly = doc.grid.cellPolygon({ col: c, row: r }).map((p) => [p.x / cell, p.y / cell] as [number, number]);
@@ -221,7 +225,7 @@ export function buildSceneData(doc: MapDocument, wallHeight: WallHeight = 'media
     }
   }
 
-  return { cols, rows, width: bounds.width / cell, depth: bounds.height / cell, boxes, props, minis, hasWater: water.length > 0, water, minHeight };
+  return { cols, rows, width: bounds.width / cell, depth: bounds.height / cell, boxes, props, minis, hasWater: water.length > 0, water, minHeight, hasRelief };
 }
 
 /**
