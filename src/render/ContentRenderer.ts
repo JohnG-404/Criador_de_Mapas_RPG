@@ -15,6 +15,8 @@ export class ContentRenderer {
   readonly objects = new Container();
   readonly walls = new Container();
   readonly tokens = new Container();
+  readonly notes = new Container();
+  private noteViews = new Map<string, { root: Container; key: string }>();
   private wallGfx = new Graphics();
   private objectTextures = new Map<string, Texture>();
   private wallPattern: FillPattern | null = null;
@@ -47,6 +49,8 @@ export class ContentRenderer {
     this.drawWalls();
     this.syncObjects();
     this.syncTokens();
+    this.syncNotes();
+    this.unsub.push(this.doc.notes.onChange(() => { this.syncNotes(); this.onChange?.(); }));
     this.unsub.push(this.doc.walls.onChange(() => { this.drawWalls(); this.onChange?.(); }));
     this.unsub.push(this.doc.objects.onChange(() => { this.syncObjects(); this.onChange?.(); }));
     this.unsub.push(this.doc.tokens.onChange(() => { this.syncTokens(); this.onChange?.(); }));
@@ -57,6 +61,50 @@ export class ContentRenderer {
     this.objects.destroy({ children: true });
     this.walls.destroy({ children: true });
     this.tokens.destroy({ children: true });
+    this.notes.destroy({ children: true });
+  }
+
+  // ---- notas do mestre
+  private syncNotes() {
+    const seen = new Set<string>();
+    const cell = this.doc.grid.cellSize;
+    for (const n of this.doc.notes.all()) {
+      seen.add(n.id);
+      const key = JSON.stringify(n);
+      const existing = this.noteViews.get(n.id);
+      if (existing?.key === key) continue;
+      existing?.root.destroy({ children: true });
+      const root = new Container();
+      root.position.set(n.x, n.y);
+      const s = cell * 0.62;
+      const g = new Graphics();
+      // papel com a ponta dobrada e um alfinete
+      g.poly([-s / 2 + 2, -s / 2 + 3, s / 2 + 2, -s / 2 + 3, s / 2 + 2, s / 2 + 3, -s / 2 + 2, s / 2 + 3]).fill({ color: 0x000000, alpha: 0.35 });
+      g.poly([-s / 2, -s / 2, s / 2, -s / 2, s / 2, s / 4, s / 4, s / 2, -s / 2, s / 2]).fill(0xf3e2a4).stroke({ width: 1, color: 0x6b5a2a });
+      g.poly([s / 2, s / 4, s / 4, s / 4, s / 4, s / 2]).fill(0xd8c27a).stroke({ width: 1, color: 0x6b5a2a });
+      for (let i = 0; i < 3; i++) g.moveTo(-s * 0.32, -s * 0.18 + i * s * 0.18).lineTo(s * (i === 2 ? 0.05 : 0.3), -s * 0.18 + i * s * 0.18);
+      g.stroke({ width: 1, color: 0x8a7640, alpha: 0.8 });
+      g.circle(0, -s / 2, s * 0.11).fill(0xb8322c).stroke({ width: 0.8, color: 0x4a1210 });
+      root.addChild(g);
+      const title = n.text.split('\n')[0].trim();
+      if (title) {
+        const label = new Text({
+          text: title.length > 28 ? title.slice(0, 27) + '…' : title,
+          resolution: 4,
+          style: { fontFamily: 'system-ui, sans-serif', fontWeight: '600', fontSize: Math.max(7, cell * 0.26), fill: 0xfff4cf, stroke: { color: 0x000000, width: 3, join: 'round' } },
+        });
+        label.anchor.set(0.5, 0);
+        label.position.set(0, s / 2 + 2);
+        root.addChild(label);
+      }
+      this.notes.addChild(root);
+      this.noteViews.set(n.id, { root, key });
+    }
+    for (const [id, v] of this.noteViews) {
+      if (seen.has(id)) continue;
+      v.root.destroy({ children: true });
+      this.noteViews.delete(id);
+    }
   }
 
   // ---- paredes e portas
@@ -97,24 +145,46 @@ export class ContentRenderer {
       d.a.x + ux * s1 - nx * half, d.a.y + uy * s1 - ny * half,
       d.a.x + ux * s0 - nx * half, d.a.y + uy * s0 - ny * half,
     ];
-    const shadowed = quad(jamb, len - jamb, t / 2).map((v, i) => v + (i % 2 ? SHADOW.y : SHADOW.x));
-    g.poly(shadowed).fill({ color: 0x000000, alpha: SHADOW.alpha });
-    g.poly(quad(jamb, len - jamb, t / 2)).fill(0x7a5230).stroke({ width: 1.2, color: 0x2b1a0e });
-    // tábuas
-    const planks = 3;
-    for (let i = 1; i < planks; i++) {
-      const off = -t / 2 + (t * i) / planks;
-      g.moveTo(d.a.x + ux * jamb + nx * off, d.a.y + uy * jamb + ny * off)
-        .lineTo(d.a.x + ux * (len - jamb) + nx * off, d.a.y + uy * (len - jamb) + ny * off);
+    if (d.open) {
+      // Porta aberta: a folha gira ~80° em torno da dobradiça (lado "a"), para dentro do lado +n.
+      const ang = (80 * Math.PI) / 180;
+      const vx = ux * Math.cos(ang) + nx * Math.sin(ang);
+      const vy = uy * Math.cos(ang) + ny * Math.sin(ang);
+      const wx = -vy, wy = vx;
+      const hx = d.a.x + ux * jamb, hy = d.a.y + uy * jamb;
+      const L = len - jamb * 2;
+      const leaf = [
+        hx + wx * t / 2, hy + wy * t / 2, hx + vx * L + wx * t / 2, hy + vy * L + wy * t / 2,
+        hx + vx * L - wx * t / 2, hy + vy * L - wy * t / 2, hx - wx * t / 2, hy - wy * t / 2,
+      ];
+      g.poly(leaf.map((v, i) => v + (i % 2 ? SHADOW.y : SHADOW.x))).fill({ color: 0x000000, alpha: SHADOW.alpha });
+      g.poly(leaf).fill(0x7a5230).stroke({ width: 1.2, color: 0x2b1a0e });
+      // arco tracejado indicando o giro
+      g.moveTo(hx + ux * L, hy + uy * L)
+        .arc(hx, hy, L, Math.atan2(uy, ux), Math.atan2(vy, vx))
+        .stroke({ width: 0.8, color: 0x2b1a0e, alpha: 0.35 });
+    } else {
+      const shadowed = quad(jamb, len - jamb, t / 2).map((v, i) => v + (i % 2 ? SHADOW.y : SHADOW.x));
+      g.poly(shadowed).fill({ color: 0x000000, alpha: SHADOW.alpha });
+      g.poly(quad(jamb, len - jamb, t / 2)).fill(0x7a5230).stroke({ width: 1.2, color: 0x2b1a0e });
+      // tábuas
+      const planks = 3;
+      for (let i = 1; i < planks; i++) {
+        const off = -t / 2 + (t * i) / planks;
+        g.moveTo(d.a.x + ux * jamb + nx * off, d.a.y + uy * jamb + ny * off)
+          .lineTo(d.a.x + ux * (len - jamb) + nx * off, d.a.y + uy * (len - jamb) + ny * off);
+      }
+      g.stroke({ width: 0.8, color: 0x3d2614, alpha: 0.8 });
     }
-    g.stroke({ width: 0.8, color: 0x3d2614, alpha: 0.8 });
     // batentes de pedra nas pontas
     for (const [s0, s1] of [[0, jamb], [len - jamb, len]]) {
       g.poly(quad(s0, s1, cell * 0.18)).fill(0x5d5953).stroke({ width: 1.2, color: 0x221d18 });
     }
     // maçaneta
-    const k = len - jamb - cell * 0.18;
-    g.circle(d.a.x + ux * k + nx * t * 0.25, d.a.y + uy * k + ny * t * 0.25, cell * 0.035).fill(0xc9a548);
+    if (!d.open) {
+      const k = len - jamb - cell * 0.18;
+      g.circle(d.a.x + ux * k + nx * t * 0.25, d.a.y + uy * k + ny * t * 0.25, cell * 0.035).fill(0xc9a548);
+    }
   }
 
   // ---- objetos

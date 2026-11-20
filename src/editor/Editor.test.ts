@@ -234,3 +234,80 @@ describe('gerar mapa', () => {
     expect(ed.doc.walls.size).toBeGreaterThan(0);
   });
 });
+
+describe('fase 5: portas, visão, régua e notas', () => {
+  const room = (ed: Editor) => {
+    // Sala de (10,10) a (15,15) com porta no meio da parede direita.
+    ed.setTool('wall');
+    ed.pointerDown({ x: 320, y: 320 }, { shift: true }); ed.pointerMove({ x: 480, y: 480 }, { shift: true }); ed.pointerUp();
+    ed.setTool('door');
+    ed.pointerDown({ x: 480, y: 12.5 * 32 }); ed.pointerUp();
+  };
+
+  it('Selecionar abre e fecha portas', () => {
+    const ed = new Editor();
+    room(ed);
+    const door = () => ed.doc.walls.all().find((w) => w.kind === 'door')!;
+    ed.setTool('select');
+    ed.pointerDown({ x: 480, y: 12.5 * 32 }); ed.pointerUp();
+    expect(door().open).toBe(true);
+    ed.pointerDown({ x: 480, y: 12.5 * 32 }); ed.pointerUp();
+    expect(door().open).toBe(false);
+  });
+
+  it('personagem de jogador revela a névoa até as paredes; abrir a porta revela mais', () => {
+    const ed = new Editor();
+    room(ed);
+    ed.fogAll(true);
+    ed.setTool('token');
+    ed.pointerDown({ x: 12.5 * 32, y: 12.5 * 32 }); ed.pointerUp();
+    ed.setTool('select');
+    ed.setTokenPc(true);
+    expect(ed.doc.fog.get(12, 12)).toBe(0);
+    expect(ed.doc.fog.get(14, 14)).toBe(0);
+    expect(ed.doc.fog.get(17, 12)).toBe(1);
+    // abrir a porta
+    ed.clearSelection();
+    ed.pointerDown({ x: 480, y: 12.5 * 32 }); ed.pointerUp();
+    expect(ed.doc.fog.get(17, 12)).toBe(0);
+    // desfazer a abertura cobre de novo (um passo só)
+    ed.undo();
+    expect(ed.doc.fog.get(17, 12)).toBe(1);
+  });
+
+  it('sem revelação automática, mover o personagem não mexe na névoa', () => {
+    const ed = new Editor();
+    ed.fogAll(true);
+    ed.setAutoReveal(false);
+    ed.setTool('token');
+    ed.pointerDown({ x: 48, y: 48 }); ed.pointerUp();
+    ed.setTool('select');
+    ed.setTokenPc(true);
+    expect(ed.doc.fog.get(1, 1)).toBe(1);
+    ed.revealVisionNow();
+    expect(ed.doc.fog.get(1, 1)).toBe(0);
+  });
+
+  it('régua mede em células (diagonal conta 1) e metros', () => {
+    const ed = new Editor();
+    ed.setTool('ruler');
+    ed.pointerDown({ x: 16, y: 16 }); ed.pointerMove({ x: 4 * 32 + 10, y: 2 * 32 + 10 }); ed.pointerUp();
+    expect(ed.overlay.ruler).toMatchObject({ cells: 4, meters: 6 });
+    ed.setTool('brush');
+    expect(ed.overlay.ruler).toBeNull();
+  });
+
+  it('notas: colocar, editar, mover e apagar', () => {
+    const ed = new Editor();
+    ed.setTool('note');
+    ed.pointerDown({ x: 100, y: 100 }); ed.pointerUp();
+    expect(ed.doc.notes.size).toBe(1);
+    ed.setNoteText('Armadilha de dardos');
+    expect(ed.selectedNote()?.text).toBe('Armadilha de dardos');
+    ed.setTool('select');
+    ed.pointerDown({ x: 100, y: 100 }); ed.pointerMove({ x: 200, y: 150 }); ed.pointerUp();
+    expect(ed.selectedNote()).toMatchObject({ x: 200, y: 150 });
+    ed.deleteSelection();
+    expect(ed.doc.notes.size).toBe(0);
+  });
+});

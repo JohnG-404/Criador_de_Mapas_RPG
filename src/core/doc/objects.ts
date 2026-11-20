@@ -19,6 +19,23 @@ export interface Token extends Item {
   /** Diâmetro em células (1 = médio, 2 = grande...). */
   size: number;
   color: string;
+  /** Personagem de jogador: a visão dele revela a névoa. */
+  pc?: boolean;
+  /** Alcance da visão em células (só para personagens de jogador). */
+  vision?: number;
+}
+
+export const DEFAULT_VISION = 12;
+
+/** Anotação do mestre presa no mapa (não aparece para os jogadores). */
+export interface Note extends Item {
+  x: number;
+  y: number;
+  text: string;
+}
+
+export function hitNote(n: Note, cellSize: number, p: Point): boolean {
+  return Math.abs(p.x - n.x) <= cellSize * 0.4 && Math.abs(p.y - n.y) <= cellSize * 0.4;
 }
 
 export interface ObjectAsset {

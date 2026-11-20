@@ -61,7 +61,7 @@ export class FogRenderer {
     // O filtro aplica a transparência ao grupo todo, sem escurecer as emendas.
     // Para os jogadores, a borda da névoa fica esfumada.
     this.container.filters = this.style === 'player'
-      ? [new BlurFilter({ strength: 10, quality: 3 })]
+      ? [new BlurFilter({ strength: 6, quality: 3 })]
       : [new AlphaFilter({ alpha: 0.55 })];
   }
 
@@ -80,7 +80,7 @@ export class FogRenderer {
     // Jogador: a névoa avança um pouco sobre as células visíveis, para o esfumado
     // não deixar ver o que está escondido; nas bordas do mapa ela passa da borda.
     const player = this.style === 'player';
-    const grow = player ? grid.cellSize * 0.4 : 0.25;
+    const grow = player ? grid.cellSize * 0.2 : 0.25;
     const edge = player ? grid.cellSize * 2 : 0;
     if (grid.kind === 'square') {
       const s = grid.cellSize;
@@ -106,7 +106,7 @@ export class FogRenderer {
           if (fog.get(col, row) !== FOG_HIDDEN) continue;
           // Hexágono um pouco maior para cobrir as emendas (e o esfumado, para o jogador).
           const c = grid.cellToWorld({ col, row });
-          const k = player ? 1.45 : 1.02;
+          const k = player ? 1.25 : 1.02;
           g.poly(grid.cellPolygon({ col, row }).flatMap((p) => [c.x + (p.x - c.x) * k, c.y + (p.y - c.y) * k]));
           if (player && (col === 0 || row === 0 || col === fog.cols - 1 || row === fog.rows - 1)) g.circle(c.x, c.y, grid.cellSize * 1.5);
           any = true;

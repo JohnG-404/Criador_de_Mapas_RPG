@@ -24,6 +24,7 @@ export function useShortcuts(editor: Editor, enabled: boolean) {
       if (tool) { editor.setTool(tool.id); e.preventDefault(); return; }
       const n = Number(e.key);
       if (n >= 1 && n <= TERRAINS.length) { editor.setTerrain(TERRAINS[n - 1].id); e.preventDefault(); return; }
+      if (e.key === 'Escape') editor.clearRuler();
       const hasSelection = editor.getState().selection !== null;
       if (e.key === '[' || e.key === ']') {
         const step = e.key === ']' ? 1 : -1;

@@ -8,6 +8,28 @@ export interface WallSegment extends Item {
   a: Point;
   b: Point;
   kind: WallKind;
+  /** Só portas: aberta não bloqueia a visão. */
+  open?: boolean;
+}
+
+/** A parede (ou porta fechada) bloqueia a visão? */
+export function blocksSight(s: WallSegment) {
+  return s.kind === 'wall' || !s.open;
+}
+
+/**
+ * O segmento p→q cruza o segmento a→b? Encostar na parede (inclusive nas
+ * pontas dela) conta como cruzar; as pontas de p→q não contam.
+ */
+export function crossesSegment(p: Point, q: Point, a: Point, b: Point) {
+  const rx = q.x - p.x, ry = q.y - p.y;
+  const sx = b.x - a.x, sy = b.y - a.y;
+  const denom = rx * sy - ry * sx;
+  if (Math.abs(denom) < 1e-9) return false; // paralelos
+  const qpx = a.x - p.x, qpy = a.y - p.y;
+  const t = (qpx * sy - qpy * sx) / denom;
+  const u = (qpx * ry - qpy * rx) / denom;
+  return t > 1e-6 && t < 1 - 1e-6 && u >= -1e-6 && u <= 1 + 1e-6;
 }
 
 const EPS = 1e-3;

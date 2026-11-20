@@ -29,10 +29,15 @@ npm run build      # gera a versão final em dist/
 | Objetos | Objeto (O): escolha no painel e clique; Shift solta sem encaixe |
 | Tokens | Token (T): clique numa célula; nome e cor no painel com Selecionar |
 | Selecionar | Selecionar (V): clique e arraste para mover; R gira (Shift+R ao contrário), `[` `]` mudam o tamanho, Delete apaga, Esc solta |
+| Abrir e fechar portas | Selecionar (V): clique na porta |
+| Personagens de jogador | Selecione um token e marque "Personagem de jogador": o que ele enxerga é revelado na névoa (paredes e portas fechadas bloqueiam) |
+| Régua | Régua (M): arraste de uma célula a outra; Esc apaga |
+| Notas do mestre | Nota (A): clique no mapa e escreva; só o mestre vê |
 | Camadas | Painel Camadas: olho oculta, cadeado trava |
 | Névoa de guerra | Névoa (N): Cobrir ou Revelar com o pincel, Alt inverte; botões Cobrir tudo e Revelar tudo |
 | Salvar / abrir | Botões Salvar e Abrir (Ctrl+S / Ctrl+O), arquivo `.rpgmap`. O mapa também é salvo sozinho no navegador |
 | Exportar imagem | Exportar PNG (mapa inteiro, sem névoa, com o grid se ele estiver ligado) |
+| Enquadrar os jogadores | Mostrar esta área: a janela dos jogadores passa a mostrar o que você está vendo |
 | Gerar mapa | Botão Gerar: masmorra (só grid quadrado), caverna ou região, a partir de uma semente. Substitui terreno, paredes e objetos (os tokens ficam) e dá para desfazer |
 | Mostrar aos jogadores | Janela dos jogadores: abre uma janela só com o mapa e a névoa opaca, atualizada a cada edição (arraste para outro monitor ou TV) |
 | Desfazer / refazer | Ctrl+Z / Ctrl+Shift+Z (ou Ctrl+Y) |
