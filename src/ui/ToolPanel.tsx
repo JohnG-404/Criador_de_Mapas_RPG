@@ -40,7 +40,7 @@ function Icon({ d, size = 20 }: { d: string; size?: number }) {
   );
 }
 
-export function ToolPanel({ editor, state }: { editor: Editor; state: EditorState }) {
+export function ToolPanel({ editor, state, onOpenSheet }: { editor: Editor; state: EditorState; onOpenSheet?: () => void }) {
   const { tool } = state;
   const terrainTool = tool === 'brush' || tool === 'eraser' || tool === 'bucket';
   const usesBrush = tool === 'brush' || tool === 'eraser' || tool === 'fog' || tool === 'elevation';
@@ -240,12 +240,12 @@ export function ToolPanel({ editor, state }: { editor: Editor; state: EditorStat
       {tool === 'token' && editor.selectedToken() && (
         <section data-testid="placed-token">
           <h2>{editor.selectedToken()!.name}</h2>
-          <SheetPanel editor={editor} />
+          <SheetPanel editor={editor} onOpenSheet={onOpenSheet} />
         </section>
       )}
       {tool === 'token' && <TokenTemplates editor={editor} state={state} />}
 
-      {tool === 'select' && !editor.selectedNote() && !editor.selectedLink() && <SelectionPanel editor={editor} state={state} />}
+      {tool === 'select' && !editor.selectedNote() && !editor.selectedLink() && <SelectionPanel editor={editor} state={state} onOpenSheet={onOpenSheet} />}
 
       <MapsPanel editor={editor} state={state} />
 
@@ -300,7 +300,7 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (c: string)
   );
 }
 
-function SelectionPanel({ editor }: { editor: Editor; state: EditorState }) {
+function SelectionPanel({ editor, onOpenSheet }: { editor: Editor; state: EditorState; onOpenSheet?: () => void }) {
   const obj = editor.selectedObject();
   const tok = editor.selectedToken();
   // O nome é editado localmente e gravado (uma vez no histórico) ao sair do campo.
@@ -365,7 +365,7 @@ function SelectionPanel({ editor }: { editor: Editor; state: EditorState }) {
           />
         </label>
       )}
-      <SheetPanel editor={editor} />
+      <SheetPanel editor={editor} onOpenSheet={onOpenSheet} />
       <button className="danger" onClick={() => editor.deleteSelection()}>Apagar (Del)</button>
     </section>
   );
@@ -420,7 +420,7 @@ function TokenTemplates({ editor, state }: { editor: Editor; state: EditorState 
 }
 
 /** Ficha do token selecionado: PV com dano e cura rápidos, defesa e sanidade. */
-function SheetPanel({ editor }: { editor: Editor }) {
+function SheetPanel({ editor, onOpenSheet }: { editor: Editor; onOpenSheet?: () => void }) {
   const tok = editor.selectedToken()!;
   const [amount, setAmount] = useState(1);
   const sheet = tok.sheet;
@@ -457,6 +457,8 @@ function SheetPanel({ editor }: { editor: Editor }) {
         <button onClick={() => editor.changeHp(amount)} aria-label="Cura">+ Cura</button>
       </div>
       {sheet.hp <= 0 && <p className="help sheet-down">Caído (0 PV)</p>}
+      {!!sheet.conds?.length && <div className="cond-list small">{sheet.conds.map((c) => <span key={c} className="cond-chip on">{c}</span>)}</div>}
+      {onOpenSheet && <button className="open-sheet" onClick={onOpenSheet}>Ficha completa (atributos, perícias, ataques)</button>}
     </div>
   );
 }

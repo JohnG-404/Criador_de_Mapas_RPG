@@ -1,0 +1,191 @@
+/* Dado 3D em tela cheia e galeria de visuais, portados do rolador de dados
+   do projeto (tema "Taverna de fantasia"). As variáveis ficam presas a estes
+   elementos para não mexer no resto do Atlas Board. */
+.palco, .vitrine, .flash, .skin-amostra {
+  --pergaminho: #f1e3c2;
+  --pergaminho-2: #e8d4a8;
+  --pergaminho-borda: #c9a86a;
+  --papel-campo: #faf1dc;
+  --tinta: #3b2716;
+  --tinta-2: #6e5337;
+  --tinta-3: #9a7f5c;
+  --ouro: #c99a3b;
+  --ouro-claro: #ecc76f;
+  --ouro-escuro: #8a6418;
+  --vinho: #7a1f1f;
+  --vinho-escuro: #561313;
+  --sucesso: #2f6b3f;
+  --falha: #a12121;
+  --raio: 10px;
+  --fonte-titulo: "Cinzel", "Times New Roman", serif;
+  --fonte-texto: "Alegreya", Georgia, "Times New Roman", serif;
+}
+.palco, .vitrine { font: 17px/1.45 var(--fonte-texto); }
+.palco h2, .vitrine h2 { margin: 0; line-height: 1.15; font-family: var(--fonte-titulo); font-weight: 700; font-size: .95rem; letter-spacing: .12em; text-transform: uppercase; color: var(--vinho); }
+.vitrine .pergaminho {
+  position: relative;
+  background-color: var(--pergaminho);
+  background-image:
+    radial-gradient(ellipse at 50% 40%, rgba(255,250,235,.55), transparent 70%),
+    radial-gradient(ellipse at 0% 0%, rgba(150,100,40,.18), transparent 40%),
+    radial-gradient(ellipse at 100% 100%, rgba(150,100,40,.22), transparent 45%),
+    linear-gradient(160deg, var(--pergaminho), var(--pergaminho-2));
+  border: 1px solid var(--pergaminho-borda);
+  border-radius: var(--raio);
+  box-shadow: inset 0 0 0 4px rgba(241,227,194,.6), inset 0 0 0 5px rgba(160,120,50,.45), inset 0 0 40px rgba(120,80,30,.25), 0 10px 30px rgba(0,0,0,.55);
+  color: var(--tinta);
+}
+.vitrine button {
+  cursor: pointer; font: inherit;
+  border: 1px solid var(--pergaminho-borda);
+  background: linear-gradient(180deg, #f8edd3, #ead7ad);
+  color: var(--tinta);
+  border-radius: 8px;
+  padding: 10px 14px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 2px 3px rgba(80,50,20,.25);
+}
+.vitrine button:hover { border-color: var(--ouro-escuro); }
+.vitrine button:focus-visible { outline: 2px solid var(--ouro); outline-offset: 2px; }
+.palco .r-detalhe { font-variant-numeric: tabular-nums; word-break: break-word; }
+.palco .r-detalhe .descartado { text-decoration: line-through; opacity: .5; }
+
+/* Clarão na tela inteira */
+.flash { position: fixed; inset: 0; pointer-events: none; z-index: 20; opacity: 0; }
+.flash.critico { background: radial-gradient(ellipse at center, rgba(255,215,120,.55), rgba(236,199,111,.15) 45%, transparent 75%); animation: clarao 1.1s ease-out; }
+.flash.falha { background: radial-gradient(ellipse at center, transparent 40%, rgba(140,10,10,.55)); animation: clarao .9s ease-out; }
+@keyframes clarao { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ---------- Botão "Meus dados" ---------- */
+
+/* Amostras de cada visual (hexágono pequeno) */
+.skin-amostra {
+  flex: none; width: 38px; height: 38px;
+  clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+  background: var(--amostra, #7a1f1f);
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.2);
+}
+.skin-amostra[data-skin="classico"] { --amostra: linear-gradient(140deg, var(--cor-jogador, #9b2c2c), #2a0f0f); }
+.skin-amostra[data-skin="obsidiana"] { --amostra: linear-gradient(140deg, #3a2e26, #0d0907 60%, #c99a3b); }
+.skin-amostra[data-skin="runica"] { --amostra: radial-gradient(circle at 50% 50%, #7ae9ff 0 12%, transparent 13%), linear-gradient(140deg, #9a968e, #55524c); }
+.skin-amostra[data-skin="osso"] { --amostra: linear-gradient(140deg, #f2e8cf, #c9b68a); }
+.skin-amostra[data-skin="dragao"] { --amostra: linear-gradient(140deg, #fff0b0, #e2a93a 45%, #7a4f10); }
+.skin-amostra[data-skin="brasa"] { --amostra: radial-gradient(circle at 60% 40%, #ffb020 0 10%, transparent 30%), linear-gradient(140deg, #3a1a10, #120806); }
+.skin-amostra[data-skin="cristal"] { --amostra: radial-gradient(circle, #f3e8ff 0 15%, #9a6cf8 50%, #4b2a8a); }
+.skin-amostra[data-skin="elfica"] { --amostra: repeating-linear-gradient(100deg, #b07a45 0 4px, #7a4c25 4px 7px); }
+.skin-amostra[data-skin="gelo"] { --amostra: linear-gradient(140deg, #ffffff, #bfe6ff 50%, #6fb6e8); }
+.skin-amostra[data-skin="vampiro"] { --amostra: radial-gradient(circle at 40% 40%, #ff6b7a, #8a0f20 55%, #2a0006); }
+
+/* ---------- Galeria de visuais ---------- */
+.vitrine {
+  position: fixed; inset: 0; z-index: 45; display: none; place-items: center; padding: 16px;
+  background: rgba(10,6,3,.88);
+}
+.vitrine.aberta { display: grid; }
+.vitrine-canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+.vitrine-painel { position: relative; z-index: 1; width: min(980px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; padding: 18px 18px 0; }
+.vitrine-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(138,100,24,.35); }
+.vitrine-topo h2 { font-size: 1.15rem; }
+.vitrine-topo p { margin: 4px 0 0; color: var(--tinta-2); font-style: italic; }
+.vitrine-fechar { flex: none; width: 38px; height: 38px; padding: 0; font-size: 1.1rem; }
+.vitrine-grade {
+  overflow-y: auto; padding: 14px 2px 18px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 12px;
+}
+.skin-cartao {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 10px 10px 12px; text-align: center; border-radius: 10px;
+}
+.skin-palco {
+  width: 100%; aspect-ratio: 1; border-radius: 8px; margin-bottom: 6px;
+  /* Feltro escuro de bandeja de dados */
+  background: radial-gradient(circle at 50% 40%, #3b2a1e, #1a110b 70%);
+  box-shadow: inset 0 2px 10px rgba(0,0,0,.6), 0 0 0 1px rgba(138,100,24,.4);
+}
+.skin-nome { font-family: var(--fonte-titulo); font-weight: 700; color: var(--vinho); font-size: .95rem; }
+.skin-desc { color: var(--tinta-2); font-size: .86rem; line-height: 1.25; }
+.skin-uso {
+  position: absolute; top: 16px; left: 16px; z-index: 3; display: none;
+  font-family: var(--fonte-titulo); font-size: .66rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 99px; background: linear-gradient(180deg, var(--ouro-claro), var(--ouro)); color: #2a1a0a;
+}
+.skin-cartao.ativo { border-color: var(--ouro-escuro); box-shadow: 0 0 0 2px var(--ouro), 0 4px 14px rgba(120,80,30,.35); }
+.skin-cartao.ativo .skin-uso { display: block; }
+@media (max-width: 480px) {
+  .vitrine { padding: 8px; }
+  .vitrine-painel { max-height: calc(100vh - 16px); padding: 14px 12px 0; }
+  .vitrine-grade { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .skin-desc { font-size: .8rem; }
+}
+
+/* ---------- Palco do dado 3D (tela cheia) ---------- */
+.palco {
+  position: fixed; inset: 0; z-index: 40; display: none;
+  grid-template-rows: auto 1fr auto; justify-items: center;
+  /* Sem desfoque (backdrop-filter): ele era recalculado a cada quadro e derrubava o FPS */
+  background: radial-gradient(ellipse at 50% 46%, rgba(60,34,12,.82), rgba(10,6,3,.95) 62%, rgba(5,3,1,.98));
+  opacity: 0; transition: opacity .25s ease; cursor: pointer; overflow: hidden;
+  color: var(--pergaminho);
+}
+.palco.ativo { display: grid; }
+.palco.visivel { opacity: 1; }
+.palco canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* Poça de luz dourada sob os dados */
+.palco::before {
+  content: ""; position: absolute; left: 50%; top: 46%; width: min(70vw, 620px); aspect-ratio: 1;
+  transform: translate(-50%, -50%); border-radius: 50%;
+  background: radial-gradient(circle, rgba(236,190,100,.22), rgba(236,190,100,.06) 45%, transparent 70%);
+  pointer-events: none;
+}
+.palco-topo { position: relative; z-index: 1; margin-top: max(5vh, 24px); padding: 0 16px; text-align: center; pointer-events: none; }
+.palco-autor {
+  display: inline-block; font-family: var(--fonte-titulo); font-weight: 700; font-size: clamp(1.3rem, 4.5vw, 1.9rem);
+  letter-spacing: .06em; color: var(--pergaminho); padding-bottom: 4px; border-bottom: 3px solid var(--cor, var(--ouro));
+  text-shadow: 0 2px 10px rgba(0,0,0,.8);
+}
+.palco-sub { margin-top: 6px; font-style: italic; color: var(--pergaminho-2); opacity: .85; font-size: 1.05rem; }
+.palco-oculta {
+  display: inline-block; margin-top: 10px; padding: 3px 12px; border-radius: 99px;
+  font-family: var(--fonte-titulo); font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  background: var(--vinho); color: var(--ouro-claro); border: 1px solid var(--ouro-escuro);
+}
+.palco-resultado {
+  position: relative; z-index: 1; grid-row: 3; margin-bottom: max(8vh, 54px); padding: 0 16px; text-align: center;
+  opacity: 0; transform: translateY(14px) scale(.96); transition: opacity .3s ease, transform .35s cubic-bezier(.2,.9,.3,1.3);
+  pointer-events: none;
+}
+.palco.pousou .palco-resultado { opacity: 1; transform: none; }
+.palco-total {
+  font-family: var(--fonte-titulo); font-weight: 800; line-height: 1; font-size: clamp(3.6rem, 13vw, 6.5rem);
+  color: var(--ouro-claro); text-shadow: 0 0 28px rgba(236,199,111,.55), 0 4px 12px rgba(0,0,0,.8);
+}
+.palco-crit { font-family: var(--fonte-titulo); font-weight: 800; letter-spacing: .25em; text-transform: uppercase; font-size: 1.1rem; min-height: 1.4em; }
+.palco-detalhe .r-detalhe { color: var(--pergaminho-2); font-size: 1.05rem; margin-top: 8px; }
+.palco-detalhe .r-detalhe code { color: var(--pergaminho); }
+.palco-detalhe .r-detalhe .max { color: #8fe0a0; }
+.palco-detalhe .r-detalhe .min { color: #ff8a80; }
+.palco-dica { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; font-size: .85rem; color: rgba(241,227,194,.45); pointer-events: none; }
+
+/* Anel do crítico: um círculo que só muda de escala e opacidade (barato para a placa de vídeo) */
+.palco-brilho {
+  position: absolute; left: 50%; top: 46%; width: 60vmax; height: 60vmax; margin: -30vmax 0 0 -30vmax;
+  border-radius: 50%; pointer-events: none; opacity: 0; transform: scale(.05);
+  background: radial-gradient(circle, rgba(255,215,120,.0) 35%, rgba(255,215,120,.55) 48%, rgba(255,215,120,0) 62%);
+  will-change: transform, opacity;
+}
+.palco.critico .palco-crit { color: var(--ouro-claro); text-shadow: 0 0 16px rgba(236,199,111,.9); }
+.palco.critico .palco-total { color: #fff3c8; text-shadow: 0 0 40px rgba(255,210,110,.95), 0 0 80px rgba(255,190,80,.6); }
+.palco.critico .palco-brilho { animation: anel-ouro 1.3s ease-out forwards; }
+@keyframes anel-ouro {
+  0% { transform: scale(.05); opacity: 1; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+.palco.falha { animation: tremer-palco .55s ease; }
+.palco.falha::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 35%, rgba(150,10,10,.55)); animation: clarao 1.2s ease-out forwards; pointer-events: none; }
+.palco.falha .palco-crit { color: #ff8a80; }
+.palco.falha .palco-total { color: #ffb3a8; text-shadow: 0 0 30px rgba(200,30,30,.8), 0 4px 12px rgba(0,0,0,.8); }
+@keyframes tremer-palco {
+  0%, 100% { transform: none; }
+  15% { transform: translate(-10px, 3px); } 30% { transform: translate(9px, -3px); }
+  45% { transform: translate(-7px, 2px); } 60% { transform: translate(5px, -1px); } 75% { transform: translate(-2px, 0); }
+}
+
