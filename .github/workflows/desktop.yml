@@ -4,7 +4,8 @@ name: App de desktop
 # Em pushes na main, em PRs que mexem no app e quando disparado à mão, os
 # instaladores ficam como artefatos da execução (aba Actions → execução → Artifacts).
 # Ao enviar uma tag v* (por exemplo v0.5.0), publica uma release com os instaladores.
-# Só envie a tag quando quiser publicar.
+# Só envie a tag quando quiser publicar. Também dá para publicar pela aba Actions:
+# Run workflow → marque "Publicar uma release".
 on:
   push:
     branches: [main]
@@ -17,6 +18,11 @@ on:
       - 'package-lock.json'
       - '.github/workflows/desktop.yml'
   workflow_dispatch:
+    inputs:
+      publicar:
+        description: 'Publicar uma release (a tag vX.Y.Z sai da versão do package.json)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -72,8 +78,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: ${{ matrix.args }}
-          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-          releaseName: 'Atlas Board ${{ github.ref_name }}'
+          tagName: ${{ (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || (inputs.publicar && 'v__VERSION__') || '' }}
+          releaseName: 'Atlas Board v__VERSION__'
           releaseBody: |
             Instaladores do Atlas Board para desktop.
 
