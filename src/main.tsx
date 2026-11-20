@@ -11,9 +11,11 @@ import '@fontsource/atkinson-hyperlegible/latin-400.css';
 import '@fontsource/atkinson-hyperlegible/latin-700.css';
 import './ui/theme.css';
 import { applyA11y, syncA11yAcrossWindows } from './ui/a11y/settings';
+import { installResponsiveLayout } from './ui/layout';
 
 applyA11y();
 syncA11yAcrossWindows();
+installResponsiveLayout();
 
 installFullscreenKey();
 

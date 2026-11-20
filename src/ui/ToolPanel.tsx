@@ -78,9 +78,10 @@ export function ToolPanel({ editor, state, onOpenSheet }: { editor: Editor; stat
                 onClick={() => editor.setTerrain(t.id)}
                 title={i < 9 ? `${t.name} (${i + 1})` : t.name}
               >
-                <span className="swatch" style={{ backgroundImage: `url(${TERRAIN_TEXTURE_URLS[t.key]})` }} />
-                <span>{t.name}</span>
-                {i < 9 && <kbd>{i + 1}</kbd>}
+                <span className="swatch" style={{ backgroundImage: `url(${TERRAIN_TEXTURE_URLS[t.key]})` }}>
+                  {i < 9 && <kbd aria-hidden="true">{i + 1}</kbd>}
+                </span>
+                <span className="terrain-name">{t.name}</span>
               </button>
             ))}
           </div>
@@ -192,7 +193,7 @@ export function ToolPanel({ editor, state, onOpenSheet }: { editor: Editor; stat
                   onClick={() => editor.setWallStyle(w.key)}
                 >
                   <span className="swatch" style={{ backgroundImage: `url(${WALL_TEXTURE_URLS[w.key]})` }} />
-                  <span>{w.name}</span>
+                  <span className="terrain-name">{w.name}</span>
                 </button>
               ))}
             </div>

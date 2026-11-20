@@ -219,12 +219,12 @@ export function App() {
           <span className="tag">fase 8</span>
         </div>
         <div className="toolbar" role="toolbar" aria-label="Arquivo e histórico">
-          <button onClick={() => setNewMapOpen(true)}><UiIcon name="scroll" />Novo mapa</button>
-          <button onClick={() => setGenOpen(true)} title="Gerar masmorra, caverna ou região a partir de uma semente"><UiIcon name="dice" />Gerar</button>
-          <button onClick={open} title="Abrir arquivo .rpgmap (Ctrl+O)"><UiIcon name="chest" />Abrir</button>
-          <button onClick={() => void save()} title="Salvar arquivo .rpgmap (Ctrl+S)"><UiIcon name="quill" />Salvar</button>
-          <button onClick={() => { void startAuth(); setCloudOpen(true); }} title="Salvar e abrir mapas na nuvem, para continuar em outro computador"><UiIcon name="cloud" />Nuvem</button>
-          <button onClick={() => setExportOpen(true)} title="Imagem PNG, arquivo para mesa virtual ou PDF para imprimir"><UiIcon name="export" />Exportar</button>
+          <button onClick={() => setNewMapOpen(true)}><UiIcon name="scroll" /><span className="btn-label">Novo mapa</span></button>
+          <button onClick={() => setGenOpen(true)} title="Gerar masmorra, caverna ou região a partir de uma semente"><UiIcon name="dice" /><span className="btn-label">Gerar</span></button>
+          <button onClick={open} title="Abrir arquivo .rpgmap (Ctrl+O)"><UiIcon name="chest" /><span className="btn-label">Abrir</span></button>
+          <button onClick={() => void save()} title="Salvar arquivo .rpgmap (Ctrl+S)"><UiIcon name="quill" /><span className="btn-label">Salvar</span></button>
+          <button onClick={() => { void startAuth(); setCloudOpen(true); }} title="Salvar e abrir mapas na nuvem, para continuar em outro computador"><UiIcon name="cloud" /><span className="btn-label">Nuvem</span></button>
+          <button onClick={() => setExportOpen(true)} title="Imagem PNG, arquivo para mesa virtual ou PDF para imprimir"><UiIcon name="export" /><span className="btn-label">Exportar</span></button>
           <input
             ref={fileRef}
             type="file"
@@ -252,10 +252,10 @@ export function App() {
           <button onClick={() => viewRef.current?.zoomOut()} title="Diminuir zoom (−)" aria-label="Diminuir zoom">−</button>
           <span className="zoom" data-testid="zoom-label">{Math.round(zoom * 100)}%</span>
           <button onClick={() => viewRef.current?.zoomIn()} title="Aumentar zoom (+)" aria-label="Aumentar zoom">+</button>
-          <button onClick={() => viewRef.current?.fitToMap()} title="Enquadrar mapa (0)"><UiIcon name="frame" />Enquadrar</button>
+          <button className="collapse-md" onClick={() => viewRef.current?.fitToMap()} title="Enquadrar mapa (0)"><UiIcon name="frame" /><span className="btn-label">Enquadrar</span></button>
           <span className="sep" />
-          <button onClick={openPlayerWindow} title="Abre uma janela só com o mapa e a névoa opaca, para mostrar aos jogadores">
-            <UiIcon name="players" />Janela dos jogadores
+          <button className="collapse-md" onClick={openPlayerWindow} title="Abre uma janela só com o mapa e a névoa opaca, para mostrar aos jogadores">
+            <UiIcon name="players" /><span className="btn-label">Janela dos jogadores</span>
           </button>
           <button
             onClick={() => {
@@ -268,16 +268,17 @@ export function App() {
                 notify('Os jogadores agora veem esta área');
               }
             }}
+            className="collapse-md"
             title="A janela dos jogadores passa a mostrar exatamente a área que você está vendo"
           >
-            <UiIcon name="eye" />Mostrar esta área
+            <UiIcon name="eye" /><span className="btn-label">Mostrar esta área</span>
           </button>
           <button
             onClick={() => setOnlineOpen(true)}
             className={room ? 'active' : ''}
             title="Sala online: os jogadores abrem um link e veem o mapa ao vivo"
           >
-            <UiIcon name="portal" />{room ? `Sala online · ${room.peers}` : 'Sala online'}
+            <UiIcon name="portal" /><span className="btn-label">{room ? `Sala online · ${room.peers}` : 'Sala online'}</span>
           </button>
           <button
             onClick={() => setDock((d) => (d ? null : 'dados'))}
@@ -285,7 +286,7 @@ export function App() {
             className={dock ? 'active' : ''}
             title="Rolador de dados e ordem de iniciativa (as rolagens aparecem para a mesa)"
           >
-            <UiIcon name="dice" />Mesa
+            <UiIcon name="dice" /><span className="btn-label">Mesa</span>
           </button>
           <button
             onClick={() => setShow3d((v) => !v)}
@@ -293,7 +294,7 @@ export function App() {
             className={show3d ? 'active' : ''}
             title="Ver o mapa em 3D (paredes com altura, objetos em volume e miniaturas)"
           >
-            <UiIcon name="cube" />Ver em 3D
+            <UiIcon name="cube" /><span className="btn-label">Ver em 3D</span>
           </button>
           <span className="sep" />
           <button
@@ -302,7 +303,7 @@ export function App() {
             data-testid="account-button"
             title={auth.account ? `Conta: ${auth.account.email}` : 'Entrar ou criar conta (opcional)'}
           >
-            <UiIcon name="user" />{auth.account ? auth.account.email.split('@')[0] : 'Entrar'}
+            <UiIcon name="user" /><span className="btn-label">{auth.account ? auth.account.email.split('@')[0] : 'Entrar'}</span>
           </button>
           <label className="toggle">
             <input type="checkbox" checked={state.showGrid} onChange={(e) => editor.setShowGrid(e.target.checked)} />
