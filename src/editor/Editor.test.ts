@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY } from '../core/doc/terrain';
 import { TOKEN_COLORS } from '../core/doc/objects';
-import { Editor } from './Editor';
+import { DEFAULT_MAP, Editor } from './Editor';
+import { ELEV_ZERO } from '../core/doc/elevation';
 
 function editor(kind: 'square' | 'hex' = 'square') {
   return new Editor({ name: 't', gridKind: kind, cols: 40, rows: 30, fill: 1, cellMeters: 1.5 });
@@ -309,5 +310,56 @@ describe('fase 5: portas, visão, régua e notas', () => {
     expect(ed.selectedNote()).toMatchObject({ x: 200, y: 150 });
     ed.deleteSelection();
     expect(ed.doc.notes.size).toBe(0);
+  });
+});
+
+describe('Editor: relevo', () => {
+  const lv = (ed: Editor, c: number, r: number) => ed.doc.elevation.get(c, r) - ELEV_ZERO;
+  const at = (c: number, r: number) => ({ x: c * 32 + 16, y: r * 32 + 16 });
+
+  it('subir: forte no centro, suave na borda, uma vez por traço e soma a cada traço', () => {
+    const ed = new Editor({ ...DEFAULT_MAP, cols: 20, rows: 20 });
+    ed.setTool('elevation');
+    ed.setBrushSize(3);
+    ed.setElevStrength(6);
+    ed.pointerDown(at(10, 10));
+    ed.pointerMove(at(10, 10));
+    ed.pointerMove({ x: 10 * 32 + 20, y: 10 * 32 + 16 });
+    ed.pointerUp();
+    expect(lv(ed, 10, 10)).toBe(6);
+    expect(lv(ed, 12, 10)).toBeGreaterThan(0);
+    expect(lv(ed, 12, 10)).toBeLessThan(6);
+    expect(lv(ed, 15, 10)).toBe(0);
+    ed.pointerDown(at(10, 10));
+    ed.pointerUp();
+    expect(lv(ed, 10, 10)).toBe(12);
+    ed.undo();
+    expect(lv(ed, 10, 10)).toBe(6);
+  });
+
+  it('Alt baixa; aplainar iguala à altura do começo do traço; aplainar tudo zera', () => {
+    const ed = new Editor({ ...DEFAULT_MAP, cols: 20, rows: 20 });
+    ed.setTool('elevation');
+    ed.setBrushSize(1);
+    ed.setElevStrength(4);
+    ed.pointerDown(at(5, 5), { alt: true });
+    ed.pointerUp();
+    expect(lv(ed, 5, 5)).toBe(-4);
+    ed.setElevMode('flatten');
+    ed.pointerDown(at(5, 5));
+    ed.pointerMove(at(9, 5));
+    ed.pointerUp();
+    expect(lv(ed, 8, 5)).toBe(-4);
+    ed.flattenAll();
+    expect(lv(ed, 8, 5)).toBe(0);
+  });
+
+  it('camada de relevo travada não aceita edição', () => {
+    const ed = new Editor({ ...DEFAULT_MAP, cols: 20, rows: 20 });
+    ed.setLayer('elevation', { locked: true });
+    ed.setTool('elevation');
+    ed.pointerDown(at(5, 5));
+    ed.pointerUp();
+    expect(lv(ed, 5, 5)).toBe(0);
   });
 });

@@ -4,6 +4,7 @@ import { SquareGrid } from '../grid/SquareGrid';
 import { ItemLayer } from './ItemLayer';
 import { registerCustomAssets, type CustomAsset, type MapObject, type Note, type Token } from './objects';
 import { TerrainLayer } from './TerrainLayer';
+import { ELEV_ZERO } from './elevation';
 import type { WallSegment } from './walls';
 
 export interface NewMapOptions {
@@ -33,12 +34,15 @@ export class MapDocument {
   readonly assets = new ItemLayer<CustomAsset>();
   /** Névoa de guerra: 1 = escondido dos jogadores, 0 = visível. Começa toda visível. */
   readonly fog: TerrainLayer;
+  /** Altura de cada célula (ver elevation.ts). Começa toda no nível 0. */
+  readonly elevation: TerrainLayer;
 
   constructor(readonly options: NewMapOptions) {
     const { gridKind, cols, rows } = options;
     this.grid = gridKind === 'hex' ? new HexGrid(cols, rows, DEFAULT_CELL_PX) : new SquareGrid(cols, rows, DEFAULT_CELL_PX);
     this.terrain = new TerrainLayer(cols, rows, options.fill);
     this.fog = new TerrainLayer(cols, rows, FOG_CLEAR);
+    this.elevation = new TerrainLayer(cols, rows, ELEV_ZERO);
     this.assets.onChange(() => registerCustomAssets(this.assets.all()));
   }
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FOG_HIDDEN, MapDocument } from './MapDocument';
+import { ELEV_ZERO } from './elevation';
 import { decodeLayer, docToJson, encodeLayer, mapFileName, parseMap } from './serialize';
 
 const opts = { name: 'Taverna', gridKind: 'square' as const, cols: 40, rows: 30, fill: 1, cellMeters: 1.5 };
@@ -86,6 +87,18 @@ describe('arquivo .rpgmap', () => {
     const bad = parseMap(f);
     expect(bad.assets.size).toBe(0);
     expect(bad.objects.size).toBe(0);
+  });
+
+  it('guarda o relevo só quando o mapa não é plano', () => {
+    const doc = new MapDocument(opts);
+    expect(JSON.parse(docToJson(doc)).elevation).toBeUndefined();
+    doc.elevation.set(3, 2, ELEV_ZERO + 12);
+    doc.elevation.set(4, 2, ELEV_ZERO - 5);
+    doc.elevation.flush();
+    const back = parseMap(docToJson(doc));
+    expect(back.elevation.get(3, 2)).toBe(ELEV_ZERO + 12);
+    expect(back.elevation.get(4, 2)).toBe(ELEV_ZERO - 5);
+    expect(back.elevation.get(0, 0)).toBe(ELEV_ZERO);
   });
 
   it('gera nome de arquivo sem acentos', () => {

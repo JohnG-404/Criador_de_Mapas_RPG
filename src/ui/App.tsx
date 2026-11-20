@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { TERRAINS } from '../core/doc/terrain';
+import { ELEV_ZERO } from '../core/doc/elevation';
 import type { Cell } from '../core/grid/GridSystem';
 import { Editor } from '../editor/Editor';
 import { loadAutosave, readMapFile, saveMapFile, startAutosave } from '../editor/persistence';
@@ -99,6 +100,7 @@ export function App() {
 
   const doc = editor.doc;
   const opts = doc.options;
+  const hoverLevel = hover ? doc.elevation.getCell(hover) - ELEV_ZERO : 0;
   const hoverTerrain = hover ? TERRAINS.find((t) => t.id === doc.terrain.getCell(hover))?.name ?? 'Vazio' : null;
 
   return (
@@ -192,7 +194,7 @@ export function App() {
           {plural(doc.walls.size, 'parede', 'paredes')} · {plural(doc.objects.size, 'objeto', 'objetos')} · {plural(doc.tokens.size, 'token', 'tokens')}
         </span>
         <span data-testid="hover-cell">
-          {hover ? `Célula ${hover.col + 1}, ${hover.row + 1} · ${hoverTerrain}` : 'Passe o mouse sobre o mapa'}
+          {hover ? `Célula ${hover.col + 1}, ${hover.row + 1} · ${hoverTerrain}${hoverLevel ? ` · altura ${hoverLevel > 0 ? '+' : ''}${hoverLevel}` : ''}` : 'Passe o mouse sobre o mapa'}
         </span>
         <span className="hint">Botão direito ou Espaço + arrastar move o mapa · roda do mouse dá zoom</span>
       </footer>

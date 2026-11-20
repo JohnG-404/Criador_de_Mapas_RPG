@@ -12,6 +12,7 @@ const TOOL_ICONS: Record<ToolId, string> = {
   select: 'M5 3l13 8-6 1.5L9 19z',
   brush: 'M4 20c3 0 5-1.5 5-4 0-1.6-1.4-3-3-3-2.2 0-3 2-3 4 0 1.2-.5 2.3-1 3h2zM9.5 13.5 20 3l1 1-10.5 10.5',
   eraser: 'M4 16l9-9 6 6-7 7H7zM9 20h11',
+  elevation: 'M2 20l6-10 4 6 3-4 7 8zM8 10l2.2 3.6M15 12l1.6 2',
   bucket: 'M5 11l7-7 7 7-7 7zM5 11h14M20 15c0 1.5 1 2.5 1 3.5a1 1 0 1 1-2 0c0-1 1-2 1-3.5z',
   wall: 'M3 6h18v12H3zM3 12h18M9 6v6M15 12v6',
   door: 'M5 21V4h10v17M15 4l4 2v15M3 21h18M12 12.5v.5',
@@ -38,7 +39,7 @@ function Icon({ d, size = 20 }: { d: string; size?: number }) {
 export function ToolPanel({ editor, state }: { editor: Editor; state: EditorState }) {
   const { tool } = state;
   const terrainTool = tool === 'brush' || tool === 'eraser' || tool === 'bucket';
-  const usesBrush = tool === 'brush' || tool === 'eraser' || tool === 'fog';
+  const usesBrush = tool === 'brush' || tool === 'eraser' || tool === 'fog' || tool === 'elevation';
   return (
     <aside className="panel" aria-label="Ferramentas">
       <section>
@@ -102,6 +103,32 @@ export function ToolPanel({ editor, state }: { editor: Editor; state: EditorStat
             Revelar pela visão dos personagens
           </label>
           <p className="help">Tokens marcados como personagem de jogador revelam o que enxergam ao se mover. Paredes e portas fechadas bloqueiam.</p>
+        </section>
+      )}
+
+      {tool === 'elevation' && (
+        <section>
+          <h2>Relevo</h2>
+          <div className="segmented four" role="radiogroup" aria-label="Modo do relevo">
+            {([['raise', 'Subir'], ['lower', 'Baixar'], ['flatten', 'Aplainar'], ['smooth', 'Suavizar']] as const).map(([m, label]) => (
+              <button key={m} role="radio" aria-checked={state.elevMode === m} className={state.elevMode === m ? 'active' : ''} onClick={() => editor.setElevMode(m)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {(state.elevMode === 'raise' || state.elevMode === 'lower') && (
+            <label className="slider">
+              <span>Força <output data-testid="elev-strength">{state.elevStrength}</output></span>
+              <input type="range" min={1} max={12} value={state.elevStrength} aria-label="Força do relevo" onChange={(e) => editor.setElevStrength(Number(e.target.value))} />
+            </label>
+          )}
+          <div className="row-buttons">
+            <button onClick={() => editor.flattenAll()}>Aplainar tudo</button>
+          </div>
+          <p className="help">
+            Pinte para criar morros, montanhas e vales. Passe de novo para subir mais. <kbd>Alt</kbd> inverte subir e baixar.
+            Aplainar iguala à altura onde o traço começou. Veja o resultado em <b>Ver em 3D</b>.
+          </p>
         </section>
       )}
 

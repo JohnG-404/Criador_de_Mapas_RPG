@@ -26,6 +26,12 @@ export class PaintCommand implements Command {
 
   get size() { return this.changes.size; }
 
+  /** Valor da célula antes deste comando (para pincéis que somam ao original). */
+  before(col: number, row: number): number {
+    const c = this.changes.get(row * this.layer.cols + col);
+    return c ? c[0] : this.layer.get(col, row);
+  }
+
   /** Avisa quem desenha a camada sobre as células pintadas até agora. */
   flush() { this.layer.flush(); }
 
