@@ -83,8 +83,30 @@ export const OBJECT_ASSETS: readonly ObjectAsset[] = [
   { key: 'vaso', name: 'Vaso de cerâmica', w: 0.4, h: 0.4 },
 ];
 
-export function objectAsset(key: string) {
-  return OBJECT_ASSETS.find((a) => a.key === key);
+/** Imagem importada pelo usuário e guardada dentro do mapa (data URL). */
+export interface CustomAsset extends Item, ObjectAsset {
+  /** data:image/...;base64,... */
+  data: string;
+}
+
+export const CUSTOM_ASSET_PREFIX = 'img-';
+
+/**
+ * Imagens importadas conhecidas nesta janela. Os ids são únicos, então
+ * basta acumular (um mapa aberto depois não apaga as de outro).
+ */
+const customAssets = new Map<string, CustomAsset>();
+
+export function registerCustomAssets(list: CustomAsset[]) {
+  for (const a of list) customAssets.set(a.key, a);
+}
+
+export function isCustomAsset(key: string) {
+  return key.startsWith(CUSTOM_ASSET_PREFIX);
+}
+
+export function objectAsset(key: string): ObjectAsset | CustomAsset | undefined {
+  return customAssets.get(key) ?? OBJECT_ASSETS.find((a) => a.key === key);
 }
 
 export const TOKEN_COLORS = ['#b8322c', '#2e6fb5', '#3c8a3e', '#c28b1e', '#7b4bb0', '#5c5c5c'];

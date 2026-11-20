@@ -23,6 +23,8 @@ const MIN_CELL_SCREEN_PX = 6;
 /** A cada quantas células desenha uma linha mais forte (só no grid quadrado). */
 const MAJOR_EVERY = 10;
 const ZOOM_STEP = 1.2;
+/** Maior lado (px) de uma imagem exportada; texturas maiores falham em muitas GPUs. */
+const MAX_EXPORT_SIDE = 8192;
 
 type Drag =
   | { kind: 'pan'; pointerId: number; last: Point }
@@ -167,33 +169,46 @@ export class MapView {
    * Exporta o mapa inteiro como PNG (sem névoa, prévias e seleção).
    * A escala é reduzida em mapas grandes para caber no limite de textura da GPU.
    */
-  async exportPng(opts: { grid: boolean; scale?: number }): Promise<Blob> {
+  async exportPng(opts: { grid: boolean; scale?: number; tokens?: boolean }): Promise<Blob> {
     const b = this.doc.grid.worldBounds();
-    const maxSide = 8192;
-    const scale = Math.min(opts.scale ?? 2, maxSide / b.width, maxSide / b.height);
+    const scale = Math.min(opts.scale ?? 2, MAX_EXPORT_SIDE / b.width, MAX_EXPORT_SIDE / b.height);
+    const canvas = this.renderRegion(b, scale, { grid: opts.grid, tokens: opts.tokens ?? true });
+    return canvasToBlob(canvas, 'image/png');
+  }
+
+  /** Maior escala de exportação possível para o mapa inteiro, sem passar do limite. */
+  maxExportScale(wanted: number) {
+    const b = this.doc.grid.worldBounds();
+    return Math.min(wanted, MAX_EXPORT_SIDE / b.width, MAX_EXPORT_SIDE / b.height);
+  }
+
+  /**
+   * Desenha um trecho do mundo numa imagem, sem névoa, notas, prévias e
+   * seleção. Usado para PNG, PDF e exportação para mesas virtuais.
+   */
+  renderRegion(frame: { x: number; y: number; width: number; height: number }, scale: number, opts: { grid: boolean; tokens: boolean }): HTMLCanvasElement {
     this.terrain?.update();
+    const tokens = this.content?.tokens;
     const saved = {
       scale: this.world.scale.x, x: this.world.position.x, y: this.world.position.y,
       grid: this.gridLayer.visible, fog: this.fogHolder.visible, hover: this.hoverLayer.visible, overlay: this.overlayLayer.visible,
-      notes: this.notesHolder.visible, ruler: this.rulerBg.visible,
+      notes: this.notesHolder.visible, ruler: this.rulerBg.visible, tokens: tokens?.visible ?? true,
     };
     this.world.scale.set(1);
     this.world.position.set(0, 0);
     this.fogHolder.visible = this.hoverLayer.visible = this.overlayLayer.visible = false;
     this.notesHolder.visible = this.rulerBg.visible = this.rulerLabel.visible = false;
+    if (tokens) tokens.visible = opts.tokens && saved.tokens;
     // Desenha o grid inteiro (o normal só cobre a área visível).
     this.gridLayer.visible = opts.grid;
     if (opts.grid) this.drawFullGrid(1 / scale);
     try {
-      const canvas = this.app.renderer.extract.canvas({
+      return this.app.renderer.extract.canvas({
         target: this.world,
-        frame: new Rectangle(b.x, b.y, b.width, b.height),
+        frame: new Rectangle(frame.x, frame.y, frame.width, frame.height),
         resolution: scale,
         clearColor: '#00000000',
       }) as HTMLCanvasElement;
-      return await new Promise<Blob>((resolve, reject) =>
-        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Falha ao gerar o PNG'))), 'image/png'),
-      );
     } finally {
       this.world.scale.set(saved.scale);
       this.world.position.set(saved.x, saved.y);
@@ -203,6 +218,7 @@ export class MapView {
       this.overlayLayer.visible = saved.overlay;
       this.notesHolder.visible = saved.notes;
       this.rulerBg.visible = saved.ruler;
+      if (tokens) tokens.visible = saved.tokens;
       this.gridCache = null;
       this.invalidate();
     }
@@ -629,4 +645,10 @@ function mods(e: PointerEvent) {
 
 function isTypingTarget(t: EventTarget | null) {
   return t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
+}
+
+export function canvasToBlob(canvas: HTMLCanvasElement, type: 'image/png' | 'image/jpeg' | 'image/webp', quality?: number) {
+  return new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Falha ao gerar a imagem'))), type, quality),
+  );
 }

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { TERRAINS } from '../core/doc/terrain';
 import type { Cell } from '../core/grid/GridSystem';
-import { mapFileName } from '../core/doc/serialize';
 import { Editor } from '../editor/Editor';
-import { loadAutosave, readMapFile, saveBlob, saveMapFile, startAutosave } from '../editor/persistence';
+import { loadAutosave, readMapFile, saveMapFile, startAutosave } from '../editor/persistence';
 import { PLAYER_QUERY, startPlayerBroadcast } from '../editor/playerSync';
 import { MapView } from '../render/MapView';
 import type { GeneratorKind } from '../core/procgen';
+import { ExportDialog } from './ExportDialog';
 import { GenerateDialog } from './GenerateDialog';
 import { NewMapDialog } from './NewMapDialog';
 import { ToolPanel } from './ToolPanel';
@@ -26,8 +26,9 @@ export function App() {
   const [zoom, setZoom] = useState(1);
   const [newMapOpen, setNewMapOpen] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [lastGen, setLastGen] = useState<{ kind: GeneratorKind; seed: string } | null>(null);
-  const dialogOpen = newMapOpen || genOpen;
+  const dialogOpen = newMapOpen || genOpen || exportOpen;
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const broadcastRef = useRef<ReturnType<typeof startPlayerBroadcast> | null>(null);
@@ -62,17 +63,6 @@ export function App() {
 
   const open = useCallback(() => fileRef.current?.click(), []);
 
-  const exportPng = useCallback(async () => {
-    const view = viewRef.current;
-    if (!view) return;
-    try {
-      const blob = await view.exportPng({ grid: editor.getState().showGrid });
-      const name = mapFileName(editor.doc.options.name).replace(/\.rpgmap$/, '.png');
-      if (await saveBlob(blob, name, { description: 'Imagem PNG', accept: { 'image/png': ['.png'] } })) notify('Imagem exportada');
-    } catch {
-      notify('Não foi possível exportar a imagem.', true);
-    }
-  }, [editor, notify]);
 
   const openPlayerWindow = () => {
     window.open(`${location.pathname}?${PLAYER_QUERY}`, 'atlas-board-jogadores', 'popup,width=1280,height=800');
@@ -113,14 +103,14 @@ export function App() {
         <div className="brand">
           <img src="./favicon.svg" alt="" width={22} height={22} />
           <span>Atlas Board</span>
-          <span className="tag">fase 5</span>
+          <span className="tag">fase 6</span>
         </div>
         <div className="toolbar" role="toolbar" aria-label="Arquivo e histórico">
           <button onClick={() => setNewMapOpen(true)}>Novo mapa</button>
           <button onClick={() => setGenOpen(true)} title="Gerar masmorra, caverna ou região a partir de uma semente">Gerar</button>
           <button onClick={open} title="Abrir arquivo .rpgmap (Ctrl+O)">Abrir</button>
           <button onClick={() => void save()} title="Salvar arquivo .rpgmap (Ctrl+S)">Salvar</button>
-          <button onClick={() => void exportPng()} title="Exportar o mapa inteiro como imagem PNG">Exportar PNG</button>
+          <button onClick={() => setExportOpen(true)} title="Imagem PNG, arquivo para mesa virtual ou PDF para imprimir">Exportar</button>
           <input
             ref={fileRef}
             type="file"
@@ -191,6 +181,15 @@ export function App() {
         <div className={`notice${notice.error ? ' error' : ''}`} role={notice.error ? 'alert' : 'status'} data-testid="notice">
           {notice.text}
         </div>
+      )}
+      {exportOpen && viewRef.current && (
+        <ExportDialog
+          view={viewRef.current}
+          doc={doc}
+          showGrid={state.showGrid}
+          onCancel={() => setExportOpen(false)}
+          onDone={(msg, error) => { setExportOpen(false); notify(msg, error); }}
+        />
       )}
       {genOpen && (
         <GenerateDialog

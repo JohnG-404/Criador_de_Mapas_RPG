@@ -1,6 +1,6 @@
 import { ItemsCommand, newId } from '../core/doc/ItemLayer';
 import { FOG_CLEAR, FOG_HIDDEN, MapDocument, type NewMapOptions } from '../core/doc/MapDocument';
-import { DEFAULT_VISION, hitNote, hitObject, hitToken, OBJECT_ASSETS, TOKEN_COLORS, type MapObject, type Note, type Token } from '../core/doc/objects';
+import { CUSTOM_ASSET_PREFIX, DEFAULT_VISION, hitNote, hitObject, hitToken, OBJECT_ASSETS, TOKEN_COLORS, type MapObject, type Note, type Token } from '../core/doc/objects';
 import { visibleCells } from '../core/doc/vision';
 import type { ItemLayer } from '../core/doc/ItemLayer';
 import { EMPTY, TERRAINS } from '../core/doc/terrain';
@@ -165,6 +165,15 @@ export class Editor {
     this.refreshOverlay();
   }
   setObjectAsset(objectAsset: string) { this.set({ objectAsset, tool: 'object' }); }
+
+  /** Adiciona uma imagem do usuário à paleta de objetos deste mapa e a escolhe. */
+  importAsset(asset: { name: string; data: string; w: number; h: number }) {
+    const key = newId(CUSTOM_ASSET_PREFIX);
+    this.doc.assets.put(key, { id: key, key, ...asset });
+    this.doc.assets.emit();
+    this.setObjectAsset(key);
+    return key;
+  }
   setWallStyle(wallStyle: string) { this.set({ wallStyle, tool: 'wall' }); }
   setTokenColor(tokenColor: string) {
     this.set({ tokenColor });

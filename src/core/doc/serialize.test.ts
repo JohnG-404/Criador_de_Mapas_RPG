@@ -70,6 +70,24 @@ describe('arquivo .rpgmap', () => {
     expect(doc.tokens.size).toBe(0);
   });
 
+  it('guarda só as imagens próprias usadas e recusa imagens inválidas', () => {
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    const doc = new MapDocument(opts);
+    doc.assets.put('img-a1', { id: 'img-a1', key: 'img-a1', name: 'Estátua', w: 2, h: 1.5, data: png });
+    doc.assets.put('img-b2', { id: 'img-b2', key: 'img-b2', name: 'Sobra', w: 1, h: 1, data: png });
+    doc.objects.put('o1', { id: 'o1', asset: 'img-a1', x: 64, y: 64, rot: 0, scale: 1 });
+    const f = JSON.parse(docToJson(doc));
+    expect(f.assets.map((a: { key: string }) => a.key)).toEqual(['img-a1']);
+    const back = parseMap(f);
+    expect(back.assets.get('img-a1')).toMatchObject({ name: 'Estátua', w: 2, h: 1.5, data: png });
+    expect(back.objects.get('o1')?.asset).toBe('img-a1');
+
+    f.assets = [{ key: 'img-a1', name: 'x', w: 2, h: 2, data: 'javascript:alert(1)' }];
+    const bad = parseMap(f);
+    expect(bad.assets.size).toBe(0);
+    expect(bad.objects.size).toBe(0);
+  });
+
   it('gera nome de arquivo sem acentos', () => {
     expect(mapFileName('Taverna do Dragão!')).toBe('taverna-do-dragao.rpgmap');
     expect(mapFileName('   ')).toBe('mapa.rpgmap');
