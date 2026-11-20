@@ -19,6 +19,8 @@ import { GenerateDialog } from './GenerateDialog';
 import { NewMapDialog } from './NewMapDialog';
 import { ToolPanel } from './ToolPanel';
 import { useShortcuts } from './useShortcuts';
+import { AccessibilityDialog } from './a11y/AccessibilityDialog';
+import { UiIcon } from './icons';
 
 const View3DPanel = lazy(() => import('./View3DPanel').then((m) => ({ default: m.View3DPanel })));
 
@@ -40,6 +42,8 @@ export function App() {
   const [show3d, setShow3d] = useState(false);
   const [onlineOpen, setOnlineOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
+  const [a11yOpen, setA11yOpen] = useState(false);
+  const closeA11y = useCallback(() => setA11yOpen(false), []);
   const closeCloud = useCallback(() => setCloudOpen(false), []);
   const [room, setRoom] = useState<{ code: string; peers: number; status: 'connecting' | 'online' | 'error' } | null>(null);
   const roomRef = useRef<HostedRoom | null>(null);
@@ -65,7 +69,7 @@ export function App() {
   useEffect(() => () => roomRef.current?.stop(), []);
   const close3d = useCallback(() => setShow3d(false), []);
   const [lastGen, setLastGen] = useState<{ kind: GeneratorKind; seed: string } | null>(null);
-  const dialogOpen = newMapOpen || genOpen || exportOpen || onlineOpen || cloudOpen;
+  const dialogOpen = newMapOpen || genOpen || exportOpen || onlineOpen || cloudOpen || a11yOpen;
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const broadcastRef = useRef<ReturnType<typeof startPlayerBroadcast> | null>(null);
@@ -134,8 +138,12 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || dialogOpen) return;
+      if (!(e.ctrlKey || e.metaKey) || dialogOpen) return;
       const k = e.key.toLowerCase();
+      if (e.altKey) {
+        if (e.code === 'KeyA') { e.preventDefault(); setA11yOpen(true); }
+        return;
+      }
       if (k === 's') { e.preventDefault(); void save(); }
       else if (k === 'o') { e.preventDefault(); open(); }
     };
@@ -171,12 +179,12 @@ export function App() {
           <span className="tag">fase 8</span>
         </div>
         <div className="toolbar" role="toolbar" aria-label="Arquivo e histórico">
-          <button onClick={() => setNewMapOpen(true)}>Novo mapa</button>
-          <button onClick={() => setGenOpen(true)} title="Gerar masmorra, caverna ou região a partir de uma semente">Gerar</button>
-          <button onClick={open} title="Abrir arquivo .rpgmap (Ctrl+O)">Abrir</button>
-          <button onClick={() => void save()} title="Salvar arquivo .rpgmap (Ctrl+S)">Salvar</button>
-          <button onClick={() => setCloudOpen(true)} title="Salvar e abrir mapas na nuvem, para continuar em outro computador">Nuvem</button>
-          <button onClick={() => setExportOpen(true)} title="Imagem PNG, arquivo para mesa virtual ou PDF para imprimir">Exportar</button>
+          <button onClick={() => setNewMapOpen(true)}><UiIcon name="scroll" />Novo mapa</button>
+          <button onClick={() => setGenOpen(true)} title="Gerar masmorra, caverna ou região a partir de uma semente"><UiIcon name="dice" />Gerar</button>
+          <button onClick={open} title="Abrir arquivo .rpgmap (Ctrl+O)"><UiIcon name="chest" />Abrir</button>
+          <button onClick={() => void save()} title="Salvar arquivo .rpgmap (Ctrl+S)"><UiIcon name="quill" />Salvar</button>
+          <button onClick={() => setCloudOpen(true)} title="Salvar e abrir mapas na nuvem, para continuar em outro computador"><UiIcon name="cloud" />Nuvem</button>
+          <button onClick={() => setExportOpen(true)} title="Imagem PNG, arquivo para mesa virtual ou PDF para imprimir"><UiIcon name="export" />Exportar</button>
           <input
             ref={fileRef}
             type="file"
@@ -197,17 +205,17 @@ export function App() {
             }}
           />
           <span className="sep" />
-          <button onClick={() => editor.undo()} disabled={!state.canUndo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer">↶</button>
-          <button onClick={() => editor.redo()} disabled={!state.canRedo} title="Refazer (Ctrl+Shift+Z)" aria-label="Refazer">↷</button>
+          <button onClick={() => editor.undo()} disabled={!state.canUndo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer"><UiIcon name="undo" /></button>
+          <button onClick={() => editor.redo()} disabled={!state.canRedo} title="Refazer (Ctrl+Shift+Z)" aria-label="Refazer"><UiIcon name="redo" /></button>
         </div>
         <div className="toolbar" role="toolbar" aria-label="Visualização">
           <button onClick={() => viewRef.current?.zoomOut()} title="Diminuir zoom (−)" aria-label="Diminuir zoom">−</button>
           <span className="zoom" data-testid="zoom-label">{Math.round(zoom * 100)}%</span>
           <button onClick={() => viewRef.current?.zoomIn()} title="Aumentar zoom (+)" aria-label="Aumentar zoom">+</button>
-          <button onClick={() => viewRef.current?.fitToMap()} title="Enquadrar mapa (0)">Enquadrar</button>
+          <button onClick={() => viewRef.current?.fitToMap()} title="Enquadrar mapa (0)"><UiIcon name="frame" />Enquadrar</button>
           <span className="sep" />
           <button onClick={openPlayerWindow} title="Abre uma janela só com o mapa e a névoa opaca, para mostrar aos jogadores">
-            Janela dos jogadores
+            <UiIcon name="players" />Janela dos jogadores
           </button>
           <button
             onClick={() => {
@@ -222,14 +230,14 @@ export function App() {
             }}
             title="A janela dos jogadores passa a mostrar exatamente a área que você está vendo"
           >
-            Mostrar esta área
+            <UiIcon name="eye" />Mostrar esta área
           </button>
           <button
             onClick={() => setOnlineOpen(true)}
             className={room ? 'active' : ''}
             title="Sala online: os jogadores abrem um link e veem o mapa ao vivo"
           >
-            {room ? `Sala online · ${room.peers}` : 'Sala online'}
+            <UiIcon name="portal" />{room ? `Sala online · ${room.peers}` : 'Sala online'}
           </button>
           <button
             onClick={() => setShow3d((v) => !v)}
@@ -237,12 +245,21 @@ export function App() {
             className={show3d ? 'active' : ''}
             title="Ver o mapa em 3D (paredes com altura, objetos em volume e miniaturas)"
           >
-            Ver em 3D
+            <UiIcon name="cube" />Ver em 3D
           </button>
           <label className="toggle">
             <input type="checkbox" checked={state.showGrid} onChange={(e) => editor.setShowGrid(e.target.checked)} />
             Grid
           </label>
+          <span className="sep" />
+          <button
+            className="icon-only"
+            onClick={() => setA11yOpen(true)}
+            aria-label="Acessibilidade"
+            title="Acessibilidade: tamanho, fonte, contraste, cores e atalhos (Ctrl+Alt+A)"
+          >
+            <UiIcon name="access" size={20} />
+          </button>
         </div>
       </header>
       <div className="workspace">
@@ -301,6 +318,7 @@ export function App() {
           onClose={closeOnline}
         />
       )}
+      {a11yOpen && <AccessibilityDialog onClose={closeA11y} />}
       {genOpen && (
         <GenerateDialog
           hex={doc.grid.kind === 'hex'}
