@@ -1,8 +1,9 @@
-import { EMPTY } from '../doc/terrain';
+import { EMPTY, TERRAINS } from '../doc/terrain';
 import { createRng } from './rng';
 import type { GenObject, GenParams, GenResult } from './types';
 
-const DIRT = 2;
+/** Chão de caverna (cai para terra se o catálogo não tiver). */
+const FLOOR = TERRAINS.find((t) => t.key === 'chao-caverna')?.id ?? 2;
 const WATER = 3;
 
 /**
@@ -31,7 +32,7 @@ export function generateCave(p: GenParams): GenResult {
   keepLargestOpen(rock, cols, rows);
 
   const terrain = new Uint8Array(cols * rows);
-  for (let i = 0; i < terrain.length; i++) terrain[i] = rock[i] ? EMPTY : DIRT;
+  for (let i = 0; i < terrain.length; i++) terrain[i] = rock[i] ? EMPTY : FLOOR;
 
   // Poças: crescem a partir de alguns pontos abertos longe das paredes.
   const pools = Math.max(1, Math.round((cols * rows) / 900));

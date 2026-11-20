@@ -8,6 +8,8 @@ export interface TerrainType {
 }
 
 export const EMPTY = 0;
+/** Água: o renderizador clareia a margem. */
+export const WATER_ID = 3;
 
 export const TERRAINS: readonly TerrainType[] = [
   { id: 1, key: 'grama', name: 'Grama', color: 0x5b7f2c },
@@ -23,6 +25,15 @@ export const TERRAINS: readonly TerrainType[] = [
   { id: 10, key: 'calcamento', name: 'Calçamento', color: 0x928066 },
   { id: 11, key: 'calcamento-musgo', name: 'Calçamento com musgo', color: 0x7c6b3f },
   { id: 12, key: 'piso-madeira', name: 'Piso de madeira', color: 0x644f3e },
+  { id: 13, key: 'chao-caverna', name: 'Chão de caverna', color: 0x43392f },
+  { id: 14, key: 'rocha-lisa', name: 'Rocha lisa', color: 0x8b8275 },
+  { id: 15, key: 'pedras-soltas', name: 'Pedras soltas', color: 0x797060 },
+  { id: 16, key: 'seixos', name: 'Seixos', color: 0x4d4135 },
+  { id: 17, key: 'rocha-musgo', name: 'Rocha com musgo', color: 0x6d6a50 },
+  { id: 18, key: 'folhas-secas', name: 'Folhas secas', color: 0x946f2b },
+  { id: 19, key: 'terra-rachada', name: 'Terra rachada', color: 0xc79f75 },
+  { id: 20, key: 'terra-queimada', name: 'Terra queimada', color: 0x635344 },
+  { id: 21, key: 'trilha', name: 'Trilha', color: 0x887851 },
 ];
 
 export function terrainById(id: number): TerrainType | undefined {
