@@ -176,6 +176,13 @@ export class MapView {
     return canvasToBlob(canvas, 'image/png');
   }
 
+  /** Imagem só do chão (terreno e grid), no máximo `maxSide` px no lado maior: textura da vista 3D. */
+  renderGround(grid: boolean, maxSide = 4096): HTMLCanvasElement {
+    const b = this.doc.grid.worldBounds();
+    const scale = Math.min(2, maxSide / b.width, maxSide / b.height);
+    return this.renderRegion(b, scale, { grid, tokens: false, content: false });
+  }
+
   /** Maior escala de exportação possível para o mapa inteiro, sem passar do limite. */
   maxExportScale(wanted: number) {
     const b = this.doc.grid.worldBounds();
@@ -186,14 +193,17 @@ export class MapView {
    * Desenha um trecho do mundo numa imagem, sem névoa, notas, prévias e
    * seleção. Usado para PNG, PDF e exportação para mesas virtuais.
    */
-  renderRegion(frame: { x: number; y: number; width: number; height: number }, scale: number, opts: { grid: boolean; tokens: boolean }): HTMLCanvasElement {
+  renderRegion(frame: { x: number; y: number; width: number; height: number }, scale: number, opts: { grid: boolean; tokens: boolean; content?: boolean }): HTMLCanvasElement {
     this.terrain?.update();
     const tokens = this.content?.tokens;
     const saved = {
       scale: this.world.scale.x, x: this.world.position.x, y: this.world.position.y,
       grid: this.gridLayer.visible, fog: this.fogHolder.visible, hover: this.hoverLayer.visible, overlay: this.overlayLayer.visible,
       notes: this.notesHolder.visible, ruler: this.rulerBg.visible, tokens: tokens?.visible ?? true,
+      content: this.contentHolder.visible,
     };
+    // Sem paredes, objetos e tokens: só o chão (usado pela vista 3D).
+    if (opts.content === false) this.contentHolder.visible = false;
     this.world.scale.set(1);
     this.world.position.set(0, 0);
     this.fogHolder.visible = this.hoverLayer.visible = this.overlayLayer.visible = false;
@@ -219,6 +229,7 @@ export class MapView {
       this.notesHolder.visible = saved.notes;
       this.rulerBg.visible = saved.ruler;
       if (tokens) tokens.visible = saved.tokens;
+      this.contentHolder.visible = saved.content;
       this.gridCache = null;
       this.invalidate();
     }

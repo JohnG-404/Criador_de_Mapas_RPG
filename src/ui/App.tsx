@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { TERRAINS } from '../core/doc/terrain';
 import type { Cell } from '../core/grid/GridSystem';
 import { Editor } from '../editor/Editor';
@@ -11,6 +11,8 @@ import { GenerateDialog } from './GenerateDialog';
 import { NewMapDialog } from './NewMapDialog';
 import { ToolPanel } from './ToolPanel';
 import { useShortcuts } from './useShortcuts';
+
+const View3DPanel = lazy(() => import('./View3DPanel').then((m) => ({ default: m.View3DPanel })));
 
 export function App() {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -27,6 +29,8 @@ export function App() {
   const [newMapOpen, setNewMapOpen] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [show3d, setShow3d] = useState(false);
+  const close3d = useCallback(() => setShow3d(false), []);
   const [lastGen, setLastGen] = useState<{ kind: GeneratorKind; seed: string } | null>(null);
   const dialogOpen = newMapOpen || genOpen || exportOpen;
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
@@ -103,7 +107,7 @@ export function App() {
         <div className="brand">
           <img src="./favicon.svg" alt="" width={22} height={22} />
           <span>Atlas Board</span>
-          <span className="tag">fase 6</span>
+          <span className="tag">fase 7</span>
         </div>
         <div className="toolbar" role="toolbar" aria-label="Arquivo e histórico">
           <button onClick={() => setNewMapOpen(true)}>Novo mapa</button>
@@ -154,6 +158,14 @@ export function App() {
           >
             Mostrar esta área
           </button>
+          <button
+            onClick={() => setShow3d((v) => !v)}
+            aria-pressed={show3d}
+            className={show3d ? 'active' : ''}
+            title="Ver o mapa em 3D (paredes com altura, objetos em volume e miniaturas)"
+          >
+            Ver em 3D
+          </button>
           <label className="toggle">
             <input type="checkbox" checked={state.showGrid} onChange={(e) => editor.setShowGrid(e.target.checked)} />
             Grid
@@ -162,7 +174,14 @@ export function App() {
       </header>
       <div className="workspace">
         <ToolPanel editor={editor} state={state} />
-        <main className="stage" ref={hostRef} />
+        <div className="stage-area">
+          <main className="stage" ref={hostRef} />
+          {show3d && viewRef.current && (
+            <Suspense fallback={null}>
+              <View3DPanel editor={editor} view={viewRef.current} showGrid={state.showGrid} docVersion={state.docVersion} onClose={close3d} />
+            </Suspense>
+          )}
+        </div>
       </div>
       <footer className="statusbar">
         <span data-testid="map-info">
