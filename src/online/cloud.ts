@@ -1,5 +1,6 @@
 import { campaignToJson, parseCampaign, type Campaign } from '../core/doc/serialize';
 import { SUPABASE_KEY, SUPABASE_URL } from './config';
+import { shareBaseUrl } from '../desktop';
 
 /**
  * Mapas salvos na nuvem (Supabase). Cada mapa tem um id e uma chave secreta;
@@ -74,7 +75,7 @@ export function newCloudToken() {
 }
 
 export function cloudLink(m: Pick<CloudMap, 'id' | 'token'>) {
-  return `${location.origin}${location.pathname}?${CLOUD_QUERY}=${m.id}#${m.token}`;
+  return `${shareBaseUrl()}?${CLOUD_QUERY}=${m.id}#${m.token}`;
 }
 
 /** Lê id e chave do endereço atual (?mapa=id#chave), se houver. */

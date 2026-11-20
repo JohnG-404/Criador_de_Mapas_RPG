@@ -1,7 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { TERRAINS } from '../core/doc/terrain';
+import { parseCampaign } from '../core/doc/serialize';
 import { ELEV_ZERO } from '../core/doc/elevation';
 import type { Cell } from '../core/grid/GridSystem';
+import { initialDesktopMap, isDesktop, openDesktopPlayerWindow } from '../desktop';
 import { Editor } from '../editor/Editor';
 import { loadAutosave, readMapFile, saveMapFile, startAutosave } from '../editor/persistence';
 import { PLAYER_QUERY, startPlayerBroadcast } from '../editor/playerSync';
@@ -109,7 +111,24 @@ export function App() {
   }, [editor, notify]);
 
 
+  // App de desktop: mapa aberto com duplo clique num arquivo .rpgmap.
+  useEffect(() => {
+    initialDesktopMap()
+      .then((file) => {
+        if (!file) return;
+        editor.loadCampaign(parseCampaign(file.text));
+        setCurrentCloudMap(null);
+        notify(`Aberto: ${file.name}`);
+      })
+      .catch((e: Error) => notify(e.message || 'Não foi possível abrir o arquivo.', true));
+  }, [editor, notify]);
+
   const openPlayerWindow = () => {
+    if (isDesktop()) {
+      openDesktopPlayerWindow(`${location.origin}${location.pathname}?${PLAYER_QUERY}`)
+        .catch(() => notify('Não foi possível abrir a janela dos jogadores.', true));
+      return;
+    }
     window.open(`${location.pathname}?${PLAYER_QUERY}`, 'atlas-board-jogadores', 'popup,width=1280,height=800');
   };
 
