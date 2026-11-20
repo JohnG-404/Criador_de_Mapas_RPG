@@ -13,9 +13,11 @@ import { generate, type GeneratorKind } from '../core/procgen';
 import { PaintCommand } from '../core/history/PaintCommand';
 import { floodFill } from '../core/tools/floodFill';
 import { strokeCells } from '../core/tools/strokeCells';
+import { cleanSheet, tokenTemplate, type TokenSheet } from '../core/doc/tokenTemplates';
+import { brushAmount, clampLevel, distanceToStroke, ELEV_ZERO, smoothedLevel, type ElevMode } from '../core/doc/elevation';
 
-export type ToolId = 'pan' | 'select' | 'brush' | 'eraser' | 'bucket' | 'wall' | 'door' | 'object' | 'token' | 'fog' | 'ruler' | 'note';
-export type LayerId = 'terrain' | 'walls' | 'objects' | 'tokens' | 'fog' | 'notes';
+export type ToolId = 'pan' | 'select' | 'brush' | 'eraser' | 'bucket' | 'elevation' | 'wall' | 'door' | 'object' | 'token' | 'fog' | 'ruler' | 'note';
+export type LayerId = 'terrain' | 'elevation' | 'walls' | 'objects' | 'tokens' | 'fog' | 'notes';
 export type FogMode = 'reveal' | 'hide';
 
 export const TOOLS: { id: ToolId; name: string; key: string; layer: LayerId | null }[] = [
@@ -24,6 +26,7 @@ export const TOOLS: { id: ToolId; name: string; key: string; layer: LayerId | nu
   { id: 'brush', name: 'Pincel', key: 'b', layer: 'terrain' },
   { id: 'eraser', name: 'Borracha', key: 'e', layer: 'terrain' },
   { id: 'bucket', name: 'Balde', key: 'g', layer: 'terrain' },
+  { id: 'elevation', name: 'Relevo', key: 'l', layer: 'elevation' },
   { id: 'wall', name: 'Parede', key: 'w', layer: 'walls' },
   { id: 'door', name: 'Porta', key: 'd', layer: 'walls' },
   { id: 'object', name: 'Objeto', key: 'o', layer: 'objects' },
@@ -39,6 +42,7 @@ export const LAYERS: { id: LayerId; name: string }[] = [
   { id: 'tokens', name: 'Tokens' },
   { id: 'objects', name: 'Objetos' },
   { id: 'walls', name: 'Paredes e portas' },
+  { id: 'elevation', name: 'Relevo' },
   { id: 'terrain', name: 'Terreno' },
 ];
 
@@ -71,7 +75,13 @@ export interface EditorState {
   /** Tema das próximas paredes desenhadas. */
   wallStyle: string;
   tokenColor: string;
+  /** Modelo usado pela ferramenta Token (null = token simples com letra). */
+  tokenTemplate: string | null;
   fogMode: FogMode;
+  /** Pincel de relevo: subir, baixar, aplainar ou suavizar. */
+  elevMode: ElevMode;
+  /** Níveis por pincelada no centro do pincel (1 nível = 1/4 de célula). */
+  elevStrength: number;
   /** Revela a névoa pela visão dos personagens de jogador a cada movimento. */
   autoReveal: boolean;
   selection: Selection;
@@ -104,7 +114,7 @@ export class Editor {
   readonly history = new History();
   private state: EditorState;
   private listeners = new Set<() => void>();
-  private stroke: { cmd: PaintCommand; last: Point; value: number } | null = null;
+  private stroke: { cmd: PaintCommand; last: Point; value: number; elev?: { mode: ElevMode; amounts: Map<number, number>; target: number } } | null = null;
   private wallDrag: { start: Point; end: Point; rect: boolean } | null = null;
   private moveDrag: { layer: SelectableLayer; id: string; dx: number; dy: number; before: MapObject | Token | Note; moved: boolean } | null = null;
   private rulerDrag: { a: Point; b: Point } | null = null;
@@ -124,11 +134,15 @@ export class Editor {
       objectAsset: OBJECT_ASSETS[0].key,
       wallStyle: DEFAULT_WALL_STYLE,
       tokenColor: TOKEN_COLORS[0],
+      tokenTemplate: null,
       fogMode: 'hide',
+      elevMode: 'raise',
+      elevStrength: 4,
       autoReveal: true,
       selection: null,
       layers: {
         terrain: { visible: true, locked: false },
+        elevation: { visible: true, locked: false },
         walls: { visible: true, locked: false },
         objects: { visible: true, locked: false },
         tokens: { visible: true, locked: false },
@@ -209,6 +223,16 @@ export class Editor {
   }
   setShowGrid(showGrid: boolean) { this.set({ showGrid }); }
   setFogMode(fogMode: FogMode) { this.set({ fogMode, tool: 'fog' }); }
+  setElevMode(elevMode: ElevMode) { this.set({ elevMode, tool: 'elevation' }); }
+  setElevStrength(n: number) { this.set({ elevStrength: Math.max(1, Math.min(12, Math.round(n))) }); }
+  /** Volta o mapa inteiro para o nível 0. */
+  flattenAll() {
+    const e = this.doc.elevation;
+    const cmd = new PaintCommand(e, 'Aplainar tudo');
+    for (let row = 0; row < e.rows; row++) for (let col = 0; col < e.cols; col++) cmd.paint(col, row, ELEV_ZERO);
+    e.flush();
+    if (!cmd.isEmpty()) this.history.push(cmd);
+  }
   setAutoReveal(autoReveal: boolean) {
     this.set({ autoReveal });
     if (autoReveal) this.revealVisionNow();
@@ -309,13 +333,13 @@ export class Editor {
   /** Raio do pincel em células, para a ferramenta atual. */
   get brushRadius() {
     const t = this.state.tool;
-    return t === 'brush' || t === 'eraser' || t === 'fog' ? this.state.brushSize - 1 : 0;
+    return t === 'brush' || t === 'eraser' || t === 'fog' || t === 'elevation' ? this.state.brushSize - 1 : 0;
   }
 
   /** Células que a ferramenta afetaria se o usuário clicasse aqui (para a prévia). */
   previewCells(cell: Cell): Cell[] {
     const t = this.state.tool;
-    if ((t !== 'brush' && t !== 'eraser' && t !== 'bucket' && t !== 'fog') || !this.toolLayerEditable) return [];
+    if ((t !== 'brush' && t !== 'eraser' && t !== 'bucket' && t !== 'fog' && t !== 'elevation') || !this.toolLayerEditable) return [];
     return this.doc.grid.cellsInRadius(cell, this.brushRadius);
   }
 
@@ -359,6 +383,18 @@ export class Editor {
       const hide = (this.state.fogMode === 'hide') !== !!mods.alt;
       const cmd = new PaintCommand(this.doc.fog, hide ? 'Cobrir com névoa' : 'Revelar névoa');
       this.stroke = { cmd, last: p, value: hide ? FOG_HIDDEN : FOG_CLEAR };
+      this.paintSegment(p, p);
+      return;
+    }
+    if (tool === 'elevation') {
+      // Alt inverte subir/baixar durante o traço.
+      let mode = this.state.elevMode;
+      if (mods.alt && (mode === 'raise' || mode === 'lower')) mode = mode === 'raise' ? 'lower' : 'raise';
+      const labels: Record<ElevMode, string> = { raise: 'Subir terreno', lower: 'Baixar terreno', flatten: 'Aplainar', smooth: 'Suavizar' };
+      const cell = this.doc.grid.worldToCell(p);
+      const target = cell ? this.doc.elevation.getCell(cell) : ELEV_ZERO;
+      const cmd = new PaintCommand(this.doc.elevation, labels[mode]);
+      this.stroke = { cmd, last: p, value: 0, elev: { mode, amounts: new Map(), target } };
       this.paintSegment(p, p);
       return;
     }
@@ -457,6 +493,34 @@ export class Editor {
     if (!o) return;
     const scale = Math.min(4, Math.max(0.25, Math.round(o.scale * (step > 0 ? 1.15 : 1 / 1.15) * 100) / 100));
     this.commit(this.doc.objects, 'Escalar objeto', [[o.id, { ...o, scale }]]);
+  }
+
+  setTokenTemplate(tokenTemplate: string | null) { this.set({ tokenTemplate, tool: 'token' }); }
+
+  /** Muda a ficha do token selecionado (cria uma ficha vazia se ele não tiver). */
+  updateTokenSheet(patch: Partial<TokenSheet>) {
+    const sel = this.state.selection;
+    if (sel?.layer !== 'tokens') return;
+    const t = this.doc.tokens.get(sel.id);
+    if (!t) return;
+    const base: TokenSheet = t.sheet ?? { hp: 10, hpMax: 10, def: 10, move: 9 };
+    const sheet = cleanSheet({ ...base, ...patch });
+    if (sheet) this.commit(this.doc.tokens, 'Ficha', [[t.id, { ...t, sheet }]]);
+  }
+
+  /** Dano (negativo) ou cura (positivo) no token selecionado, sem passar do máximo. */
+  changeHp(delta: number) {
+    const t = this.selectedToken();
+    if (!t?.sheet) return;
+    this.updateTokenSheet({ hp: Math.min(t.sheet.hpMax, t.sheet.hp + delta) });
+  }
+
+  removeTokenSheet() {
+    const t = this.selectedToken();
+    if (!t?.sheet) return;
+    const rest: Token = { ...t };
+    delete rest.sheet;
+    this.commit(this.doc.tokens, 'Ficha', [[t.id, rest]]);
   }
 
   renameSelectedToken(name: string) {
@@ -629,8 +693,16 @@ export class Editor {
     if (!cell) return;
     const pos = this.doc.grid.cellToWorld(cell);
     const id = newId('t');
-    const name = nextTokenName(this.doc.tokens.all().map((t) => t.name));
-    this.commit(this.doc.tokens, 'Token', [[id, { id, name, ...pos, size: 1, color: this.state.tokenColor }]]);
+    const used = this.doc.tokens.all().map((t) => t.name);
+    const tpl = tokenTemplate(this.state.tokenTemplate ?? undefined);
+    const token: Token = tpl
+      ? {
+        id, ...pos, name: nextTemplateName(tpl.name, used), size: tpl.size, color: tpl.color,
+        template: tpl.key, sheet: { ...tpl.sheet },
+        ...(tpl.kind === 'pc' ? { pc: true, vision: DEFAULT_VISION } : {}),
+      }
+      : { id, name: nextTokenName(used), ...pos, size: 1, color: this.state.tokenColor };
+    this.commit(this.doc.tokens, tpl ? `Token: ${tpl.name}` : 'Token', [[id, token]]);
     this.set({ selection: { layer: 'tokens', id } });
   }
 
@@ -682,10 +754,42 @@ export class Editor {
   private paintSegment(a: Point, b: Point) {
     const s = this.stroke;
     if (!s) return;
+    if (s.elev) {
+      this.paintElevation(s.cmd, s.elev, a, b);
+      s.cmd.flush();
+      return;
+    }
     for (const c of strokeCells(this.doc.grid, a, b, this.brushRadius)) s.cmd.paint(c.col, c.row, s.value);
     s.cmd.flush();
   }
 
+
+  /**
+   * Relevo: cada célula sobe/baixa uma vez por traço, pelo maior valor que o
+   * pincel já passou nela (forte no centro, suave na borda).
+   */
+  private paintElevation(cmd: PaintCommand, e: { mode: ElevMode; amounts: Map<number, number>; target: number }, a: Point, b: Point) {
+    const grid = this.doc.grid;
+    const layer = this.doc.elevation;
+    const radius = this.brushRadius;
+    for (const c of strokeCells(grid, a, b, radius)) {
+      const idx = c.row * layer.cols + c.col;
+      if (e.mode === 'flatten') { cmd.paint(c.col, c.row, e.target); continue; }
+      if (e.mode === 'smooth') { cmd.paint(c.col, c.row, smoothedLevel(grid, layer, c) + ELEV_ZERO); continue; }
+      const amount = brushAmount(this.state.elevStrength, distanceToStroke(grid, c, a, b), radius);
+      if (amount <= (e.amounts.get(idx) ?? 0)) continue;
+      e.amounts.set(idx, amount);
+      const orig = cmd.before(c.col, c.row) - ELEV_ZERO;
+      cmd.paint(c.col, c.row, clampLevel(orig + (e.mode === 'raise' ? amount : -amount)) + ELEV_ZERO);
+    }
+  }
+}
+
+/** "Goblin", depois "Goblin 2", "Goblin 3"... */
+export function nextTemplateName(base: string, used: string[]) {
+  const set = new Set(used);
+  if (!set.has(base)) return base;
+  for (let i = 2; ; i++) if (!set.has(`${base} ${i}`)) return `${base} ${i}`;
 }
 
 /** Próximo nome livre: A, B, C... Z, depois A2, B2... */

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY } from '../core/doc/terrain';
 import { TOKEN_COLORS } from '../core/doc/objects';
-import { Editor } from './Editor';
+import { DEFAULT_MAP, Editor } from './Editor';
+import { ELEV_ZERO } from '../core/doc/elevation';
 
 function editor(kind: 'square' | 'hex' = 'square') {
   return new Editor({ name: 't', gridKind: kind, cols: 40, rows: 30, fill: 1, cellMeters: 1.5 });
@@ -309,5 +310,96 @@ describe('fase 5: portas, visão, régua e notas', () => {
     expect(ed.selectedNote()).toMatchObject({ x: 200, y: 150 });
     ed.deleteSelection();
     expect(ed.doc.notes.size).toBe(0);
+  });
+});
+
+describe('Editor: relevo', () => {
+  const lv = (ed: Editor, c: number, r: number) => ed.doc.elevation.get(c, r) - ELEV_ZERO;
+  const at = (c: number, r: number) => ({ x: c * 32 + 16, y: r * 32 + 16 });
+
+  it('subir: forte no centro, suave na borda, uma vez por traço e soma a cada traço', () => {
+    const ed = new Editor({ ...DEFAULT_MAP, cols: 20, rows: 20 });
+    ed.setTool('elevation');
+    ed.setBrushSize(3);
+    ed.setElevStrength(6);
+    ed.pointerDown(at(10, 10));
+    ed.pointerMove(at(10, 10));
+    ed.pointerMove({ x: 10 * 32 + 20, y: 10 * 32 + 16 });
+    ed.pointerUp();
+    expect(lv(ed, 10, 10)).toBe(6);
+    expect(lv(ed, 12, 10)).toBeGreaterThan(0);
+    expect(lv(ed, 12, 10)).toBeLessThan(6);
+    expect(lv(ed, 15, 10)).toBe(0);
+    ed.pointerDown(at(10, 10));
+    ed.pointerUp();
+    expect(lv(ed, 10, 10)).toBe(12);
+    ed.undo();
+    expect(lv(ed, 10, 10)).toBe(6);
+  });
+
+  it('Alt baixa; aplainar iguala à altura do começo do traço; aplainar tudo zera', () => {
+    const ed = new Editor({ ...DEFAULT_MAP, cols: 20, rows: 20 });
+    ed.setTool('elevation');
+    ed.setBrushSize(1);
+    ed.setElevStrength(4);
+    ed.pointerDown(at(5, 5), { alt: true });
+    ed.pointerUp();
+    expect(lv(ed, 5, 5)).toBe(-4);
+    ed.setElevMode('flatten');
+    ed.pointerDown(at(5, 5));
+    ed.pointerMove(at(9, 5));
+    ed.pointerUp();
+    expect(lv(ed, 8, 5)).toBe(-4);
+    ed.flattenAll();
+    expect(lv(ed, 8, 5)).toBe(0);
+  });
+
+  it('camada de relevo travada não aceita edição', () => {
+    const ed = new Editor({ ...DEFAULT_MAP, cols: 20, rows: 20 });
+    ed.setLayer('elevation', { locked: true });
+    ed.setTool('elevation');
+    ed.pointerDown(at(5, 5));
+    ed.pointerUp();
+    expect(lv(ed, 5, 5)).toBe(0);
+  });
+});
+
+describe('Editor: modelos de token e ficha', () => {
+  it('coloca o modelo com arte, tamanho, cor e ficha; repete o nome numerado', () => {
+    const ed = new Editor({ ...DEFAULT_MAP, cols: 20, rows: 20 });
+    ed.setTokenTemplate('ogro');
+    ed.pointerDown({ x: 100, y: 100 }); ed.pointerUp();
+    ed.pointerDown({ x: 300, y: 100 }); ed.pointerUp();
+    const [a, b] = ed.doc.tokens.all();
+    expect(a).toMatchObject({ name: 'Ogro', template: 'ogro', size: 2, sheet: { hp: 59, hpMax: 59, def: 11, cr: '2' } });
+    expect(a.pc).toBeUndefined();
+    expect(b.name).toBe('Ogro 2');
+    ed.setTokenTemplate('ocultista');
+    ed.pointerDown({ x: 100, y: 300 }); ed.pointerUp();
+    const c = ed.doc.tokens.all()[2];
+    expect(c).toMatchObject({ pc: true, sheet: { san: 24, sanMax: 24 } });
+  });
+
+  it('dano e cura respeitam o máximo; a ficha pode ser editada e desfeita', () => {
+    const ed = new Editor({ ...DEFAULT_MAP, cols: 20, rows: 20 });
+    ed.setTokenTemplate('goblin');
+    ed.pointerDown({ x: 100, y: 100 }); ed.pointerUp();
+    ed.changeHp(-5);
+    expect(ed.selectedToken()!.sheet!.hp).toBe(2);
+    ed.changeHp(10);
+    expect(ed.selectedToken()!.sheet!.hp).toBe(7);
+    ed.updateTokenSheet({ def: 17 });
+    expect(ed.selectedToken()!.sheet!.def).toBe(17);
+    ed.undo();
+    expect(ed.selectedToken()!.sheet!.def).toBe(15);
+  });
+
+  it('token simples continua com letra e sem ficha', () => {
+    const ed = new Editor({ ...DEFAULT_MAP, cols: 20, rows: 20 });
+    ed.setTool('token');
+    ed.pointerDown({ x: 100, y: 100 }); ed.pointerUp();
+    const t = ed.doc.tokens.all()[0];
+    expect(t.name).toBe('A');
+    expect(t.sheet).toBeUndefined();
   });
 });

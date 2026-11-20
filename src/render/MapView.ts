@@ -6,6 +6,7 @@ import { sameCell, type Cell, type CellRange, type Point } from '../core/grid/Gr
 import type { Editor, LayerId, LayerState } from '../editor/Editor';
 import { ContentRenderer } from './ContentRenderer';
 import { FogRenderer } from './FogRenderer';
+import { ElevationRenderer } from './ElevationRenderer';
 import { TerrainRenderer } from './TerrainRenderer';
 import { theme } from './theme';
 
@@ -41,6 +42,8 @@ export class MapView {
   private mapLayer = new Graphics();
   private terrain: TerrainRenderer | null = null;
   private terrainHolder = new Container();
+  private elevation: ElevationRenderer | null = null;
+  private elevationHolder = new Container();
   private gridLayer = new Graphics();
   private hoverLayer = new Graphics();
   private contentHolder = new Container();
@@ -104,7 +107,7 @@ export class MapView {
     canvas.setAttribute('aria-label', 'Área do mapa');
     canvas.dataset.testid = 'map-canvas';
 
-    this.world.addChild(this.mapLayer, this.terrainHolder, this.gridLayer, this.contentHolder, this.fogHolder, this.notesHolder, this.hoverLayer, this.overlayLayer, this.rulerBg, this.rulerLabel);
+    this.world.addChild(this.mapLayer, this.terrainHolder, this.elevationHolder, this.gridLayer, this.contentHolder, this.fogHolder, this.notesHolder, this.hoverLayer, this.overlayLayer, this.rulerBg, this.rulerLabel);
     this.rulerLabel.anchor.set(0.5);
     this.rulerLabel.visible = false;
     this.notesHolder.visible = this.mode === 'gm';
@@ -137,6 +140,7 @@ export class MapView {
     this.terrain?.destroy();
     this.content?.destroy();
     this.fog?.destroy();
+    this.elevation?.destroy();
     if ((this.app as unknown as { renderer?: unknown }).renderer) this.app.destroy(true, { children: true });
   }
 
@@ -180,7 +184,7 @@ export class MapView {
   renderGround(grid: boolean, maxSide = 4096): HTMLCanvasElement {
     const b = this.doc.grid.worldBounds();
     const scale = Math.min(2, maxSide / b.width, maxSide / b.height);
-    return this.renderRegion(b, scale, { grid, tokens: false, content: false });
+    return this.renderRegion(b, scale, { grid, tokens: false, content: false, relief: false });
   }
 
   /** Maior escala de exportação possível para o mapa inteiro, sem passar do limite. */
@@ -193,7 +197,7 @@ export class MapView {
    * Desenha um trecho do mundo numa imagem, sem névoa, notas, prévias e
    * seleção. Usado para PNG, PDF e exportação para mesas virtuais.
    */
-  renderRegion(frame: { x: number; y: number; width: number; height: number }, scale: number, opts: { grid: boolean; tokens: boolean; content?: boolean }): HTMLCanvasElement {
+  renderRegion(frame: { x: number; y: number; width: number; height: number }, scale: number, opts: { grid: boolean; tokens: boolean; content?: boolean; relief?: boolean }): HTMLCanvasElement {
     this.terrain?.update();
     const tokens = this.content?.tokens;
     const saved = {
@@ -201,10 +205,15 @@ export class MapView {
       grid: this.gridLayer.visible, fog: this.fogHolder.visible, hover: this.hoverLayer.visible, overlay: this.overlayLayer.visible,
       notes: this.notesHolder.visible, ruler: this.rulerBg.visible, tokens: tokens?.visible ?? true,
       content: this.contentHolder.visible,
+      relief: this.elevationHolder.visible,
     };
+    this.elevation?.update();
+    // A vista 3D tem relevo de verdade: tira o sombreamento desenhado.
+    if (opts.relief === false) this.elevationHolder.visible = false;
     // Sem paredes, objetos e tokens: só o chão (usado pela vista 3D).
     if (opts.content === false) this.contentHolder.visible = false;
     this.world.scale.set(1);
+    this.elevation?.setZoom(1);
     this.world.position.set(0, 0);
     this.fogHolder.visible = this.hoverLayer.visible = this.overlayLayer.visible = false;
     this.notesHolder.visible = this.rulerBg.visible = this.rulerLabel.visible = false;
@@ -221,6 +230,7 @@ export class MapView {
       }) as HTMLCanvasElement;
     } finally {
       this.world.scale.set(saved.scale);
+      this.elevation?.setZoom(this.camera.zoom);
       this.world.position.set(saved.x, saved.y);
       this.gridLayer.visible = saved.grid;
       this.fogHolder.visible = saved.fog;
@@ -230,6 +240,7 @@ export class MapView {
       this.rulerBg.visible = saved.ruler;
       if (tokens) tokens.visible = saved.tokens;
       this.contentHolder.visible = saved.content;
+      this.elevationHolder.visible = saved.relief;
       this.gridCache = null;
       this.invalidate();
     }
@@ -258,9 +269,11 @@ export class MapView {
     this.content = null;
     this.fog?.destroy();
     this.fog = null;
+    this.elevation?.destroy();
+    this.elevation = null;
     this.doc = this.editor.doc;
     const renderer = new TerrainRenderer(this.doc);
-    const content = new ContentRenderer(this.doc);
+    const content = new ContentRenderer(this.doc, this.mode === 'player');
     this.terrain = renderer;
     await Promise.all([renderer.load(), content.load()]);
     if (this.destroyed || this.terrain !== renderer) {
@@ -270,6 +283,12 @@ export class MapView {
     renderer.buildAll();
     renderer.onChange = () => this.invalidate();
     this.terrainHolder.addChild(renderer.container);
+    const elevation = new ElevationRenderer(this.doc);
+    elevation.buildAll();
+    elevation.onChange = () => this.invalidate();
+    this.elevation = elevation;
+    elevation.setZoom(this.camera.zoom);
+    this.elevationHolder.addChild(elevation.container);
     this.content = content;
     content.onChange = () => this.invalidate();
     content.start();
@@ -320,6 +339,7 @@ export class MapView {
     }
     this.fogHolder.visible = layers.fog.visible;
     this.terrainHolder.visible = layers.terrain.visible;
+    this.elevationHolder.visible = layers.elevation.visible;
     if (this.content) {
       this.content.walls.visible = layers.walls.visible;
       this.content.objects.visible = layers.objects.visible;
@@ -331,6 +351,7 @@ export class MapView {
   private afterCameraChange() {
     this.camera.clampTo(this.doc.grid.worldBounds());
     this.events.onZoomChange?.(this.camera.zoom);
+    this.elevation?.setZoom(this.camera.zoom);
     this.invalidate();
   }
 
@@ -343,6 +364,7 @@ export class MapView {
     }
     if (this.terrain?.update()) this.dirty = true;
     if (this.fog?.update()) this.dirty = true;
+    if (this.elevation?.update()) this.dirty = true;
     if (!this.dirty) return;
     this.dirty = false;
 

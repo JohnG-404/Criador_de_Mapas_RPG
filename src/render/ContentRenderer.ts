@@ -3,6 +3,7 @@ import type { MapDocument } from '../core/doc/MapDocument';
 import { objectAsset, type MapObject, type Token } from '../core/doc/objects';
 import { wallStyleOf, type WallSegment } from '../core/doc/walls';
 import { FLAT_OBJECTS, OBJECT_TEXTURE_URLS, WALL_TEXTURE_URLS } from './objectTextures';
+import { TOKEN_ART_URLS } from './tokenArt';
 
 const SHADOW = { x: 3, y: 4, alpha: 0.38 };
 
@@ -19,17 +20,28 @@ export class ContentRenderer {
   private noteViews = new Map<string, { root: Container; key: string }>();
   private wallGfx = new Graphics();
   private objectTextures = new Map<string, Texture>();
+  private tokenTextures = new Map<string, Texture>();
   private wallPatterns = new Map<string, FillPattern>();
   private objectSprites = new Map<string, { sprite: Sprite; shadow: Sprite | null; key: string }>();
   private tokenViews = new Map<string, { root: Container; key: string }>();
   private unsub: Array<() => void> = [];
   onChange: (() => void) | null = null;
 
-  constructor(private doc: MapDocument) {
+  /** Na janela dos jogadores, só os personagens de jogador mostram a barra de PV. */
+  constructor(private doc: MapDocument, private playerView = false) {
     this.walls.addChild(this.wallGfx);
   }
 
   async load() {
+    await Promise.all(
+      Object.entries(TOKEN_ART_URLS).map(async ([key, url]) => {
+        const tex = await Assets.load<Texture>(url);
+        tex.source.scaleMode = 'linear';
+        tex.source.autoGenerateMipmaps = true;
+        tex.source.updateMipmaps();
+        this.tokenTextures.set(key, tex);
+      }),
+    );
     await Promise.all(
       Object.entries(OBJECT_TEXTURE_URLS).map(async ([key, url]) => {
         const tex = await Assets.load<Texture>(url);
@@ -300,10 +312,30 @@ export class ContentRenderer {
     g.circle(SHADOW.x, SHADOW.y, r).fill({ color: 0x000000, alpha: 0.4 });
     g.circle(0, 0, r).fill(0x1b1712);
     g.circle(0, 0, r - 1.5).fill(0xd8c38a);
-    g.circle(0, 0, r - 3.5).fill(t.color);
-    // brilho sutil em cima à esquerda, para parecer uma ficha
-    g.circle(-r * 0.3, -r * 0.35, r * 0.45).fill({ color: 0xffffff, alpha: 0.12 });
-    root.addChild(g);
+    const art = t.template ? this.tokenTextures.get(t.template) : undefined;
+    if (art) {
+      // Retrato: anel na cor do token e fundo escuro, arte recortada no círculo.
+      g.circle(0, 0, r - 1.5).fill(t.color);
+      g.circle(0, 0, r - Math.max(3, r * 0.14)).fill(0x2b3324);
+      root.addChild(g);
+      const inner = r - Math.max(3, r * 0.14);
+      const sprite = new Sprite(art);
+      sprite.anchor.set(0.5);
+      sprite.width = sprite.height = inner * 2 * 1.04;
+      const mask = new Graphics().circle(0, 0, inner).fill(0xffffff);
+      sprite.mask = mask;
+      root.addChild(sprite, mask);
+    } else {
+      g.circle(0, 0, r - 3.5).fill(t.color);
+      // brilho sutil em cima à esquerda, para parecer uma ficha
+      g.circle(-r * 0.3, -r * 0.35, r * 0.45).fill({ color: 0xffffff, alpha: 0.12 });
+      root.addChild(g);
+    }
+    if (t.sheet && (!this.playerView || t.pc)) root.addChild(hpBar(t.sheet.hp, t.sheet.hpMax, r));
+    if (art) {
+      if (t.name.length) root.addChild(nameLabel(t.name, cell, r));
+      return root;
+    }
     const label = new Text({
       text: initials(t.name),
       resolution: 4,
@@ -329,6 +361,27 @@ export class ContentRenderer {
     }
     return root;
   }
+}
+
+/** Barra de PV logo acima do token: verde, amarela e vermelha conforme cai. */
+function hpBar(hp: number, max: number, r: number) {
+  const k = Math.max(0, Math.min(1, hp / Math.max(1, max)));
+  const w = r * 1.5, h = Math.max(3, r * 0.16);
+  const g = new Graphics();
+  g.roundRect(-w / 2 - 1, -r - h - 3, w + 2, h + 2, 2).fill({ color: 0x000000, alpha: 0.75 });
+  if (k > 0) g.roundRect(-w / 2, -r - h - 2, w * k, h, 1.5).fill(k > 0.5 ? 0x4caf50 : k > 0.25 ? 0xe0b030 : 0xd9412f);
+  return g;
+}
+
+function nameLabel(text: string, cell: number, r: number) {
+  const name = new Text({
+    text,
+    resolution: 4,
+    style: { fontFamily: 'system-ui, sans-serif', fontWeight: '600', fontSize: Math.max(7, cell * 0.28), fill: 0xffffff, stroke: { color: 0x000000, width: 3, join: 'round' } },
+  });
+  name.anchor.set(0.5, 0);
+  name.position.set(0, r + 2);
+  return name;
 }
 
 function initials(name: string) {

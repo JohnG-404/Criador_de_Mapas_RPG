@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MapDocument } from '../core/doc/MapDocument';
+import { ELEV_ZERO, LEVEL_HEIGHT } from '../core/doc/elevation';
 import { buildSceneData, groundHeights, WALL_HEIGHTS, WALL_THICKNESS, WATER_DEPTH } from './sceneData';
 
 const opts = { name: 't', gridKind: 'square' as const, cols: 10, rows: 8, fill: 1, cellMeters: 1.5 };
@@ -11,7 +12,9 @@ describe('cena 3D', () => {
     const s = buildSceneData(doc, 'alta');
     expect(s.boxes).toHaveLength(1);
     const b = s.boxes[0];
-    expect(b).toMatchObject({ x: 3, z: 2, height: WALL_HEIGHTS.alta, kind: 'wall', style: 'pedra' });
+    expect(b).toMatchObject({ x: 3, z: 2, kind: 'wall', style: 'pedra' });
+    expect(b.height).toBeCloseTo(WALL_HEIGHTS.alta + 0.04);
+    expect(b.y0).toBeCloseTo(-0.04);
     expect(b.len).toBeCloseTo(4 + WALL_THICKNESS);
     expect(b.rotY).toBeCloseTo(0);
   });
@@ -51,7 +54,7 @@ describe('cena 3D', () => {
   it('tokens viram miniaturas', () => {
     const doc = new MapDocument(opts);
     doc.tokens.put('t', { id: 't', name: 'Ana', x: 80, y: 48, size: 2, color: '#b8322c' });
-    expect(buildSceneData(doc).minis).toEqual([{ id: 't', name: 'Ana', color: '#b8322c', x: 2.5, z: 1.5, size: 2 }]);
+    expect(buildSceneData(doc).minis).toEqual([{ id: 't', name: 'Ana', color: '#b8322c', x: 2.5, z: 1.5, size: 2, ground: 0 }]);
   });
 
   it('água afunda o chão e o resto fica plano', () => {
@@ -70,5 +73,30 @@ describe('cena 3D', () => {
     const s = buildSceneData(doc);
     expect(s.width).toBeGreaterThan(9);
     expect(groundHeights(doc, 8, 8).every((v) => v === 0)).toBe(true);
+  });
+
+  it('relevo: chão, paredes, objetos e miniaturas acompanham a altura', () => {
+    const doc = new MapDocument(opts);
+    for (let r = 0; r < 8; r++) for (let c = 5; c < 10; c++) doc.elevation.set(c, r, ELEV_ZERO + 8);
+    doc.elevation.flush();
+    doc.walls.put('w', { id: 'w', a: { x: 7 * 32, y: 32 }, b: { x: 9 * 32, y: 32 }, kind: 'wall' });
+    doc.walls.put('s', { id: 's', a: { x: 4 * 32, y: 128 }, b: { x: 6 * 32, y: 128 }, kind: 'wall' });
+    doc.objects.put('o', { id: 'o', asset: 'barril', x: 8 * 32 + 16, y: 4 * 32 + 16, rot: 0, scale: 1 });
+    doc.tokens.put('t', { id: 't', name: 'A', x: 16, y: 16, size: 1, color: '#fff' });
+    const s = buildSceneData(doc);
+    const top = 8 * LEVEL_HEIGHT;
+    const w = s.boxes.find((b) => b.y0 > 1)!;
+    expect(w.y0).toBeCloseTo(top - 0.04);
+    // Parede na encosta começa embaixo e é mais alta para alcançar o topo.
+    const slope = s.boxes.find((b) => b !== w)!;
+    expect(slope.y0).toBeLessThan(0.1);
+    expect(slope.y0 + slope.height).toBeGreaterThan(top);
+    expect(s.props[0].ground).toBeCloseTo(top);
+    expect(s.minis[0].ground).toBe(0);
+    const h = groundHeights(doc, 10, 8);
+    expect(h[4 * 11 + 8]).toBeCloseTo(top);
+    expect(h[4 * 11 + 1]).toBe(0);
+    expect(h[4 * 11 + 5]).toBeGreaterThan(0);
+    expect(h[4 * 11 + 5]).toBeLessThan(top);
   });
 });

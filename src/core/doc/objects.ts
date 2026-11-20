@@ -1,5 +1,6 @@
 import type { Item } from './ItemLayer';
 import type { Point } from '../grid/GridSystem';
+import type { TokenSheet } from './tokenTemplates';
 
 /** Objeto colocado no mapa (árvore, mesa, baú...). Posição = centro, em pixels do mundo. */
 export interface MapObject extends Item {
@@ -23,6 +24,10 @@ export interface Token extends Item {
   pc?: boolean;
   /** Alcance da visão em células (só para personagens de jogador). */
   vision?: number;
+  /** Modelo de origem (arte e sistema), ver tokenTemplates.ts. */
+  template?: string;
+  /** Ficha básica (PV, defesa, sanidade...). */
+  sheet?: TokenSheet;
 }
 
 export const DEFAULT_VISION = 12;

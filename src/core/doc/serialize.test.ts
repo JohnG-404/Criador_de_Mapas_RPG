@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FOG_HIDDEN, MapDocument } from './MapDocument';
+import { ELEV_ZERO } from './elevation';
 import { decodeLayer, docToJson, encodeLayer, mapFileName, parseMap } from './serialize';
 
 const opts = { name: 'Taverna', gridKind: 'square' as const, cols: 40, rows: 30, fill: 1, cellMeters: 1.5 };
@@ -86,6 +87,30 @@ describe('arquivo .rpgmap', () => {
     const bad = parseMap(f);
     expect(bad.assets.size).toBe(0);
     expect(bad.objects.size).toBe(0);
+  });
+
+  it('guarda o relevo só quando o mapa não é plano', () => {
+    const doc = new MapDocument(opts);
+    expect(JSON.parse(docToJson(doc)).elevation).toBeUndefined();
+    doc.elevation.set(3, 2, ELEV_ZERO + 12);
+    doc.elevation.set(4, 2, ELEV_ZERO - 5);
+    doc.elevation.flush();
+    const back = parseMap(docToJson(doc));
+    expect(back.elevation.get(3, 2)).toBe(ELEV_ZERO + 12);
+    expect(back.elevation.get(4, 2)).toBe(ELEV_ZERO - 5);
+    expect(back.elevation.get(0, 0)).toBe(ELEV_ZERO);
+  });
+
+  it('guarda modelo e ficha do token e limpa valores estranhos', () => {
+    const doc = new MapDocument(opts);
+    doc.tokens.put('t', { id: 't', name: 'Goblin', x: 16, y: 16, size: 1, color: '#b8322c', template: 'goblin', sheet: { hp: 3, hpMax: 7, def: 15, move: 9, cr: '1/4' } });
+    const f = JSON.parse(docToJson(doc));
+    expect(parseMap(f).tokens.get('t')).toMatchObject({ template: 'goblin', sheet: { hp: 3, hpMax: 7, def: 15, cr: '1/4' } });
+    f.tokens[0].template = 'nao-existe';
+    f.tokens[0].sheet = { hp: 'x', hpMax: 7, def: 1 };
+    const t = parseMap(f).tokens.get('t')!;
+    expect(t.template).toBeUndefined();
+    expect(t.sheet).toBeUndefined();
   });
 
   it('gera nome de arquivo sem acentos', () => {

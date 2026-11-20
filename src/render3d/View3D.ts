@@ -1,5 +1,5 @@
 import {
-  ACESFilmicToneMapping, BoxGeometry, BufferGeometry, CanvasTexture, CapsuleGeometry, Color, CylinderGeometry,
+  ACESFilmicToneMapping, BoxGeometry, Float32BufferAttribute, BufferGeometry, CanvasTexture, CapsuleGeometry, CircleGeometry, Color, CylinderGeometry,
   DirectionalLight, DoubleSide, Fog, Group, HemisphereLight, Matrix4, Mesh, MeshStandardMaterial, PCFSoftShadowMap,
   PerspectiveCamera, PlaneGeometry, SphereGeometry, RepeatWrapping, Scene, SRGBColorSpace, Sprite, SpriteMaterial, Texture,
   TextureLoader, Vector3, WebGLRenderer, type Material,
@@ -9,7 +9,8 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { MapDocument } from '../core/doc/MapDocument';
 import { isCustomAsset, objectAsset } from '../core/doc/objects';
 import { OBJECT_TEXTURE_URLS, WALL_TEXTURE_URLS } from '../render/objectTextures';
-import { buildSceneData, groundHeights, WATER_DEPTH, type Box, type Prop, type SceneData, type WallHeight } from './sceneData';
+import { TOKEN_ART_URLS } from '../render/tokenArt';
+import { buildSceneData, groundHeights, type Box, type Prop, type SceneData, type WallHeight } from './sceneData';
 
 /** Objetos de forma orgânica: as fatias afinam para cima (cúpula). */
 const DOME = new Set(['arvore', 'arbusto', 'rochas', 'pedregulho', 'pedra', 'rocha-grande', 'rocha-escura', 'pedra-vermelha', 'rochas-quebradas', 'samambaia']);
@@ -125,7 +126,7 @@ export class View3D {
     this.unsub.forEach((f) => f());
     const d = this.doc;
     const again = () => this.scheduleRebuild(250);
-    this.unsub = [d.walls.onChange(again), d.objects.onChange(again), d.tokens.onChange(again), d.terrain.onChange(again), d.assets.onChange(again)];
+    this.unsub = [d.walls.onChange(again), d.objects.onChange(again), d.tokens.onChange(again), d.terrain.onChange(again), d.elevation.onChange(again), d.assets.onChange(again)];
   }
 
   private scheduleRebuild(ms: number) {
@@ -202,6 +203,7 @@ export class View3D {
     const wallStyles = new Set(s.boxes.map((b) => b.style));
     const wallTex = new Map<string, Texture>();
     const propTex = new Map<string, Texture>();
+    const tokenTex = new Map<string, Texture>();
     await Promise.all([
       ...[...wallStyles, 'madeira'].map(async (k) => {
         const url = WALL_TEXTURE_URLS[k];
@@ -210,6 +212,9 @@ export class View3D {
       ...[...new Set(s.props.map((p) => p.asset))].map(async (k) => {
         const t = this.propTexture(k);
         if (t) propTex.set(k, await t.catch(() => null as unknown as Texture));
+      }),
+      ...[...new Set(s.minis.map((m) => m.template).filter((k): k is string => !!k && !!TOKEN_ART_URLS[k]))].map(async (k) => {
+        tokenTex.set(k, await this.texture(`token:${k}`, TOKEN_ART_URLS[k]));
       }),
     ]);
     if (this.disposed || build !== this.builds) return;
@@ -225,7 +230,7 @@ export class View3D {
       const t = propTex.get(p.asset);
       if (t) this.addProp(p, t);
     }
-    this.addMinis(s);
+    this.addMinis(s, tokenTex);
     this.placeSun(s);
     this.frame(s);
     this.dirty = true;
@@ -254,34 +259,59 @@ export class View3D {
   }
 
   private addGround(s: SceneData, tex: Texture) {
-    const segX = Math.min(400, Math.ceil(s.width * 2));
-    const segZ = Math.min(400, Math.ceil(s.depth * 2));
+    // Malha subdividida só quando há relevo ou água; senão um plano basta.
+    const detailed = s.hasRelief || s.hasWater;
+    const segX = detailed ? Math.min(400, Math.ceil(s.width * 2)) : 1;
+    const segZ = detailed ? Math.min(400, Math.ceil(s.depth * 2)) : 1;
     const g = new PlaneGeometry(s.width, s.depth, segX, segZ);
     g.rotateX(-Math.PI / 2);
     g.translate(s.width / 2, 0, s.depth / 2);
-    if (s.hasWater) {
-      const h = groundHeights(this.doc, segX, segZ);
-      const pos = g.attributes.position;
-      for (let i = 0; i < pos.count; i++) pos.setY(i, h[i]);
-      g.computeVertexNormals();
-    }
+    const h = detailed ? groundHeights(this.doc, segX, segZ) : new Float32Array((segX + 1) * (segZ + 1));
+    const pos = g.attributes.position;
+    for (let i = 0; i < pos.count; i++) pos.setY(i, h[i]);
+    g.computeVertexNormals();
     const ground = new Mesh(g, new MeshStandardMaterial({ map: tex, roughness: 0.95 }));
     ground.receiveShadow = true;
+    ground.castShadow = s.hasRelief;
     this.world.add(ground);
 
-    // Laterais do tabuleiro (sem tampa), para o mapa parecer uma peça sólida.
-    const depth = 0.6;
-    const sideMat = new MeshStandardMaterial({ color: 0x3b3128, roughness: 1 });
-    const hidden = new MeshStandardMaterial({ visible: false });
-    const slab = new Mesh(new BoxGeometry(s.width, depth, s.depth), [sideMat, sideMat, hidden, sideMat, sideMat, sideMat]);
-    slab.position.set(s.width / 2, -depth / 2 - 0.002, s.depth / 2);
-    this.world.add(slab);
+    // Laterais do tabuleiro: uma faixa em cada borda, do chão até o fundo.
+    const bottom = s.minHeight - 0.6;
+    const verts: number[] = [];
+    const idx: number[] = [];
+    const edge = (pts: Array<[number, number, number]>) => {
+      for (let k = 0; k < pts.length - 1; k++) {
+        const [x0, z0, y0] = pts[k], [x1, z1, y1] = pts[k + 1];
+        const v = verts.length / 3;
+        verts.push(x0, y0, z0, x1, y1, z1, x1, bottom, z1, x0, bottom, z0);
+        idx.push(v, v + 2, v + 1, v, v + 3, v + 2, v, v + 1, v + 2, v, v + 2, v + 3);
+      }
+    };
+    const at = (i: number, j: number): [number, number, number] => [(i / segX) * s.width, (j / segZ) * s.depth, h[j * (segX + 1) + i]];
+    edge(Array.from({ length: segX + 1 }, (_, i) => at(i, 0)));
+    edge(Array.from({ length: segX + 1 }, (_, i) => at(i, segZ)));
+    edge(Array.from({ length: segZ + 1 }, (_, j) => at(0, j)));
+    edge(Array.from({ length: segZ + 1 }, (_, j) => at(segX, j)));
+    const skirt = new BufferGeometry();
+    skirt.setAttribute('position', new Float32BufferAttribute(verts, 3));
+    skirt.setIndex(idx);
+    skirt.computeVertexNormals();
+    this.world.add(new Mesh(skirt, new MeshStandardMaterial({ color: 0x3b3128, roughness: 1, side: DoubleSide })));
 
-    if (s.hasWater) {
-      const water = new Mesh(
-        new PlaneGeometry(s.width, s.depth).rotateX(-Math.PI / 2).translate(s.width / 2, -WATER_DEPTH * 0.3, s.depth / 2),
-        new MeshStandardMaterial({ color: 0x356f78, transparent: true, opacity: 0.42, roughness: 0.08, metalness: 0.15, depthWrite: false }),
-      );
+    if (s.water.length) {
+      // Superfície da água célula a célula, na altura de cada uma.
+      const wv: number[] = [];
+      const wi: number[] = [];
+      for (const w of s.water) {
+        const v0 = wv.length / 3;
+        for (const [x, z] of w.poly) wv.push(x, w.y, z);
+        for (let k = 1; k < w.poly.length - 1; k++) wi.push(v0, v0 + k + 1, v0 + k);
+      }
+      const wg = new BufferGeometry();
+      wg.setAttribute('position', new Float32BufferAttribute(wv, 3));
+      wg.setIndex(wi);
+      wg.computeVertexNormals();
+      const water = new Mesh(wg, new MeshStandardMaterial({ color: 0x356f78, transparent: true, opacity: 0.42, roughness: 0.08, metalness: 0.15, depthWrite: false, side: DoubleSide }));
       water.receiveShadow = true;
       this.world.add(water);
     }
@@ -314,7 +344,7 @@ export class View3D {
 
   private addProp(p: Prop, tex: Texture) {
     const group = new Group();
-    group.position.set(p.x, 0, p.z);
+    group.position.set(p.x, p.ground, p.z);
     group.rotation.y = p.rotY;
     if (p.height <= 0) {
       // Rente ao chão (tapete, imagens próprias): um plano só.
@@ -383,15 +413,36 @@ export class View3D {
     group.add(pole, cup, flame);
   }
 
-  private addMinis(s: SceneData) {
+  private addMinis(s: SceneData, art: Map<string, Texture>) {
     const baseMat = new MeshStandardMaterial({ color: 0x23211f, roughness: 0.6 });
     for (const t of s.minis) {
       const r = t.size * 0.4;
+      const tex = t.template ? art.get(t.template) : undefined;
+      if (tex) {
+        // Ficha com retrato: disco na cor do token e a arte deitada por cima.
+        const h = 0.12;
+        const disc = new Mesh(new CylinderGeometry(r, r * 1.04, h, 36), [
+          new MeshStandardMaterial({ color: new Color(t.color), roughness: 0.5 }),
+          new MeshStandardMaterial({ color: 0x2b3324, roughness: 0.8 }),
+          baseMat,
+        ]);
+        disc.position.set(t.x, t.ground + h / 2, t.z);
+        disc.castShadow = disc.receiveShadow = true;
+        const face = new Mesh(new CircleGeometry(r * 0.88, 36).rotateX(-Math.PI / 2), new MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.05, roughness: 0.7 }));
+        face.position.set(t.x, t.ground + h + 0.003, t.z);
+        this.world.add(disc, face);
+        if (t.name) {
+          const label = makeLabel(t.name);
+          label.position.set(t.x, t.ground + h + 0.45, t.z);
+          this.world.add(label);
+        }
+        continue;
+      }
       const base = new Mesh(new CylinderGeometry(r, r * 1.05, 0.08, 28), baseMat);
-      base.position.set(t.x, 0.04, t.z);
+      base.position.set(t.x, t.ground + 0.04, t.z);
       const color = new Color(t.color);
       const body = new Mesh(new CapsuleGeometry(r * 0.48, t.size * 0.42, 6, 16), new MeshStandardMaterial({ color, roughness: 0.55 }));
-      const bodyY = 0.08 + r * 0.48 + t.size * 0.21;
+      const bodyY = t.ground + 0.08 + r * 0.48 + t.size * 0.21;
       body.position.set(t.x, bodyY, t.z);
       for (const m of [base, body]) { m.castShadow = true; m.receiveShadow = true; this.world.add(m); }
       if (t.name) {

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { OBJECT_ASSETS, TOKEN_COLORS, objectAsset } from '../core/doc/objects';
 import { readImageAsset } from './importImage';
+import { SYSTEMS, TOKEN_TEMPLATES, tokenTemplate, type TokenSystem } from '../core/doc/tokenTemplates';
+import { TOKEN_ART_URLS } from '../render/tokenArt';
 import { TERRAINS } from '../core/doc/terrain';
 import { LAYERS, MAX_BRUSH, MIN_BRUSH, TOOLS, type Editor, type EditorState, type ToolId } from '../editor/Editor';
 import { OBJECT_TEXTURE_URLS, WALL_TEXTURE_URLS } from '../render/objectTextures';
@@ -12,6 +14,7 @@ const TOOL_ICONS: Record<ToolId, string> = {
   select: 'M5 3l13 8-6 1.5L9 19z',
   brush: 'M4 20c3 0 5-1.5 5-4 0-1.6-1.4-3-3-3-2.2 0-3 2-3 4 0 1.2-.5 2.3-1 3h2zM9.5 13.5 20 3l1 1-10.5 10.5',
   eraser: 'M4 16l9-9 6 6-7 7H7zM9 20h11',
+  elevation: 'M2 20l6-10 4 6 3-4 7 8zM8 10l2.2 3.6M15 12l1.6 2',
   bucket: 'M5 11l7-7 7 7-7 7zM5 11h14M20 15c0 1.5 1 2.5 1 3.5a1 1 0 1 1-2 0c0-1 1-2 1-3.5z',
   wall: 'M3 6h18v12H3zM3 12h18M9 6v6M15 12v6',
   door: 'M5 21V4h10v17M15 4l4 2v15M3 21h18M12 12.5v.5',
@@ -38,7 +41,7 @@ function Icon({ d, size = 20 }: { d: string; size?: number }) {
 export function ToolPanel({ editor, state }: { editor: Editor; state: EditorState }) {
   const { tool } = state;
   const terrainTool = tool === 'brush' || tool === 'eraser' || tool === 'bucket';
-  const usesBrush = tool === 'brush' || tool === 'eraser' || tool === 'fog';
+  const usesBrush = tool === 'brush' || tool === 'eraser' || tool === 'fog' || tool === 'elevation';
   return (
     <aside className="panel" aria-label="Ferramentas">
       <section>
@@ -102,6 +105,32 @@ export function ToolPanel({ editor, state }: { editor: Editor; state: EditorStat
             Revelar pela visão dos personagens
           </label>
           <p className="help">Tokens marcados como personagem de jogador revelam o que enxergam ao se mover. Paredes e portas fechadas bloqueiam.</p>
+        </section>
+      )}
+
+      {tool === 'elevation' && (
+        <section>
+          <h2>Relevo</h2>
+          <div className="segmented four" role="radiogroup" aria-label="Modo do relevo">
+            {([['raise', 'Subir'], ['lower', 'Baixar'], ['flatten', 'Aplainar'], ['smooth', 'Suavizar']] as const).map(([m, label]) => (
+              <button key={m} role="radio" aria-checked={state.elevMode === m} className={state.elevMode === m ? 'active' : ''} onClick={() => editor.setElevMode(m)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {(state.elevMode === 'raise' || state.elevMode === 'lower') && (
+            <label className="slider">
+              <span>Força <output data-testid="elev-strength">{state.elevStrength}</output></span>
+              <input type="range" min={1} max={12} value={state.elevStrength} aria-label="Força do relevo" onChange={(e) => editor.setElevStrength(Number(e.target.value))} />
+            </label>
+          )}
+          <div className="row-buttons">
+            <button onClick={() => editor.flattenAll()}>Aplainar tudo</button>
+          </div>
+          <p className="help">
+            Pinte para criar morros, montanhas e vales. Passe de novo para subir mais. <kbd>Alt</kbd> inverte subir e baixar.
+            Aplainar iguala à altura onde o traço começou. Veja o resultado em <b>Ver em 3D</b>.
+          </p>
         </section>
       )}
 
@@ -198,13 +227,13 @@ export function ToolPanel({ editor, state }: { editor: Editor; state: EditorStat
         </section>
       )}
 
-      {tool === 'token' && (
-        <section>
-          <h2>Cor do token</h2>
-          <ColorPicker value={state.tokenColor} onChange={(c) => editor.setTokenColor(c)} />
-          <p className="help">Clique numa célula para pôr um token. Use Selecionar para mover e renomear.</p>
+      {tool === 'token' && editor.selectedToken() && (
+        <section data-testid="placed-token">
+          <h2>{editor.selectedToken()!.name}</h2>
+          <SheetPanel editor={editor} />
         </section>
       )}
+      {tool === 'token' && <TokenTemplates editor={editor} state={state} />}
 
       {tool === 'select' && !editor.selectedNote() && <SelectionPanel editor={editor} state={state} />}
 
@@ -324,8 +353,99 @@ function SelectionPanel({ editor }: { editor: Editor; state: EditorState }) {
           />
         </label>
       )}
+      <SheetPanel editor={editor} />
       <button className="danger" onClick={() => editor.deleteSelection()}>Apagar (Del)</button>
     </section>
+  );
+}
+
+/** Escolha do modelo da ferramenta Token: personagens e inimigos prontos, com arte e ficha. */
+function TokenTemplates({ editor, state }: { editor: Editor; state: EditorState }) {
+  const current = tokenTemplate(state.tokenTemplate ?? undefined);
+  const [system, setSystem] = useState<TokenSystem>(current?.system ?? 'dnd');
+  const list = TOKEN_TEMPLATES.filter((t) => t.system === system);
+  const group = (kind: 'pc' | 'enemy') => (
+    <div className="token-templates" role="radiogroup" aria-label={kind === 'pc' ? 'Personagens' : 'Inimigos'}>
+      {list.filter((t) => t.kind === kind).map((t) => (
+        <button
+          key={t.key}
+          role="radio"
+          aria-checked={state.tokenTemplate === t.key}
+          className={state.tokenTemplate === t.key ? 'active' : ''}
+          onClick={() => editor.setTokenTemplate(t.key)}
+          title={`${t.name} · PV ${t.sheet.hp} · ${SYSTEMS[t.system].def} ${t.sheet.def}${t.sheet.san ? ` · Sanidade ${t.sheet.san}` : ''}${t.sheet.cr ? ` · ND ${t.sheet.cr}` : ''}`}
+        >
+          <img src={TOKEN_ART_URLS[t.key]} alt="" style={{ borderColor: t.color }} />
+          <span>{t.name}</span>
+        </button>
+      ))}
+    </div>
+  );
+  return (
+    <section>
+      <h2>Modelo do token</h2>
+      <div className="segmented" role="radiogroup" aria-label="Sistema">
+        {(Object.keys(SYSTEMS) as TokenSystem[]).map((k) => (
+          <button key={k} role="radio" aria-checked={system === k} className={system === k ? 'active' : ''} onClick={() => setSystem(k)}>
+            {k === 'dnd' ? 'D&D 5e' : 'Horror'}
+          </button>
+        ))}
+      </div>
+      <button className={`simple-token${state.tokenTemplate === null ? ' active' : ''}`} onClick={() => editor.setTokenTemplate(null)} aria-pressed={state.tokenTemplate === null}>
+        Token simples (letra e cor)
+      </button>
+      {state.tokenTemplate === null && <ColorPicker value={state.tokenColor} onChange={(c) => editor.setTokenColor(c)} />}
+      <h3>Personagens</h3>
+      {group('pc')}
+      <h3>Inimigos</h3>
+      {group('enemy')}
+      <p className="help">
+        Clique numa célula para pôr o token com a arte e a ficha do modelo. Personagens já revelam a névoa.
+        {system === 'dnd' ? ' Valores das criaturas do SRD 5.1 (CC-BY-4.0).' : ' Arquétipos genéricos com PV, Defesa e Sanidade.'}
+      </p>
+    </section>
+  );
+}
+
+/** Ficha do token selecionado: PV com dano e cura rápidos, defesa e sanidade. */
+function SheetPanel({ editor }: { editor: Editor }) {
+  const tok = editor.selectedToken()!;
+  const [amount, setAmount] = useState(1);
+  const sheet = tok.sheet;
+  const tpl = tokenTemplate(tok.template);
+  const sys = SYSTEMS[tpl?.system ?? 'dnd'];
+  if (!sheet) {
+    return (
+      <div className="sheet">
+        <button onClick={() => editor.updateTokenSheet({})}>Adicionar ficha (PV e {sys.def})</button>
+      </div>
+    );
+  }
+  const num = (label: string, value: number, onChange: (v: number) => void, id: string) => (
+    <label className="sheet-field" htmlFor={id}>
+      <span>{label}</span>
+      <input id={id} type="number" value={value} onChange={(e) => onChange(Number(e.target.value) || 0)} />
+    </label>
+  );
+  return (
+    <div className="sheet" data-testid="token-sheet">
+      <h3>Ficha{tpl ? ` · ${tpl.name}` : ''}</h3>
+      <div className="sheet-grid">
+        {num('PV', sheet.hp, (v) => editor.updateTokenSheet({ hp: v }), 'sheet-hp')}
+        {num('PV máx.', sheet.hpMax, (v) => editor.updateTokenSheet({ hpMax: v }), 'sheet-hpmax')}
+        {num(sys.def, sheet.def, (v) => editor.updateTokenSheet({ def: v }), 'sheet-def')}
+        {num('Desloc. (m)', sheet.move, (v) => editor.updateTokenSheet({ move: v }), 'sheet-move')}
+        {sheet.san !== undefined && num('Sanidade', sheet.san, (v) => editor.updateTokenSheet({ san: v }), 'sheet-san')}
+        {sheet.sanMax !== undefined && num('San. máx.', sheet.sanMax, (v) => editor.updateTokenSheet({ sanMax: v }), 'sheet-sanmax')}
+      </div>
+      {sheet.cr && <p className="help">Nível de desafio {sheet.cr}</p>}
+      <div className="row-buttons hp-quick">
+        <button onClick={() => editor.changeHp(-amount)} aria-label="Dano">− Dano</button>
+        <input type="number" min={1} value={amount} aria-label="Quantidade" onChange={(e) => setAmount(Math.max(1, Number(e.target.value) || 1))} />
+        <button onClick={() => editor.changeHp(amount)} aria-label="Cura">+ Cura</button>
+      </div>
+      {sheet.hp <= 0 && <p className="help sheet-down">Caído (0 PV)</p>}
+    </div>
   );
 }
 

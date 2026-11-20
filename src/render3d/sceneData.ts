@@ -1,6 +1,7 @@
 import type { MapDocument } from '../core/doc/MapDocument';
 import { isCustomAsset, objectAsset } from '../core/doc/objects';
 import { wallStyleOf } from '../core/doc/walls';
+import { ELEV_ZERO, LEVEL_HEIGHT } from '../core/doc/elevation';
 
 /**
  * Descrição da cena 3D calculada a partir do documento, sem three.js.
@@ -42,6 +43,8 @@ export interface Prop {
   height: number;
   /** Altura onde o volume começa (copa da árvore fica no alto). */
   base: number;
+  /** Altura do chão sob o objeto. */
+  ground: number;
   /** Tronco (só árvores). */
   trunk?: { radius: number; height: number };
 }
@@ -53,6 +56,9 @@ export interface Mini {
   x: number;
   z: number;
   size: number;
+  ground: number;
+  /** Modelo do token (retrato em assets/tokens). */
+  template?: string;
 }
 
 export interface SceneData {
@@ -65,6 +71,52 @@ export interface SceneData {
   props: Prop[];
   minis: Mini[];
   hasWater: boolean;
+  /** Polígonos da superfície da água, por célula (x, z) e a altura dela. */
+  water: Array<{ poly: Array<[number, number]>; y: number }>;
+  /** Menor altura do chão (para o fundo do tabuleiro). */
+  minHeight: number;
+  /** Algum relevo pintado? Sem relevo e sem água o chão é um plano simples. */
+  hasRelief: boolean;
+}
+
+/**
+ * Altura do chão (em células) num ponto do mundo (px): média da elevação
+ * em volta, para as encostas saírem em rampa, menos o fundo da água.
+ */
+export function makeSurface(doc: MapDocument) {
+  const grid = doc.grid;
+  const cell = grid.cellSize;
+  const cols = grid.cols;
+  const cache = new Map<number, number>();
+  const levelAt = (px: number, py: number) => {
+    const c = grid.worldToCell({ x: px, y: py });
+    if (!c) {
+      // Fora do mapa: usa a célula mais próxima da borda.
+      const b = grid.worldBounds();
+      const q = grid.worldToCell({ x: Math.max(b.x + 1, Math.min(b.x + b.width - 1, px)), y: Math.max(b.y + 1, Math.min(b.y + b.height - 1, py)) });
+      return q ? [doc.elevation.get(q.col, q.row) - ELEV_ZERO, doc.terrain.get(q.col, q.row) === WATER_TERRAIN ? 1 : 0] : [0, 0];
+    }
+    const idx = c.row * cols + c.col;
+    let v = cache.get(idx);
+    if (v === undefined) {
+      v = (doc.elevation.get(c.col, c.row) - ELEV_ZERO) * 2 + (doc.terrain.get(c.col, c.row) === WATER_TERRAIN ? 1 : 0);
+      cache.set(idx, v);
+    }
+    return [Math.floor(v / 2), v & 1];
+  };
+  const r = cell * 0.5;
+  const offsets = [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r], [r, r], [-r, r], [r, -r], [-r, -r]];
+  const near = cell * 0.35;
+  const wetOffsets = [[0, 0], [near, 0], [-near, 0], [0, near], [0, -near]];
+  /** Altura em células no ponto (px, py) do mundo. */
+  return (px: number, py: number) => {
+    let sum = 0;
+    for (const [ox, oy] of offsets) sum += levelAt(px + ox, py + oy)[0];
+    let wet = 0;
+    for (const [ox, oy] of wetOffsets) wet += levelAt(px + ox, py + oy)[1];
+    const h = (sum / offsets.length) * LEVEL_HEIGHT;
+    return wet ? h - WATER_DEPTH * (wet / 5) ** 1.5 : h;
+  };
 }
 
 /** Altura (em células) do volume de cada objeto do catálogo. Ausente = rente ao chão. */
@@ -86,6 +138,13 @@ function segmentBox(ax: number, az: number, bx: number, bz: number, extra: numbe
 
 export function buildSceneData(doc: MapDocument, wallHeight: WallHeight = 'media'): SceneData {
   const cell = doc.grid.cellSize;
+  const surface = makeSurface(doc);
+  /** Base e altura extra para uma peça que vai de a até b (em células) acompanhar o chão. */
+  const footing = (ax: number, az: number, bx: number, bz: number) => {
+    const hs = [surface(ax * cell, az * cell), surface(bx * cell, bz * cell), surface(((ax + bx) / 2) * cell, ((az + bz) / 2) * cell)];
+    const lo = Math.min(...hs), hi = Math.max(...hs);
+    return { base: lo - 0.04, extra: hi - lo + 0.04 };
+  };
   const H = WALL_HEIGHTS[wallHeight];
   const bounds = doc.grid.worldBounds();
   const boxes: Box[] = [];
@@ -95,7 +154,8 @@ export function buildSceneData(doc: MapDocument, wallHeight: WallHeight = 'media
     const style = wallStyleOf(s);
     if (s.kind === 'wall') {
       // Estende meia espessura em cada ponta para fechar os cantos.
-      const b = segmentBox(ax, az, bx, bz, WALL_THICKNESS, { height: H, thick: WALL_THICKNESS, y0: 0, kind: 'wall', style });
+      const f = footing(ax, az, bx, bz);
+      const b = segmentBox(ax, az, bx, bz, WALL_THICKNESS, { height: H + f.extra, thick: WALL_THICKNESS, y0: f.base, kind: 'wall', style });
       if (b) boxes.push(b);
       continue;
     }
@@ -105,13 +165,15 @@ export function buildSceneData(doc: MapDocument, wallHeight: WallHeight = 'media
     const nx = -uz, nz = ux;
     const jamb = 0.12;
     const doorH = Math.min(H, 1.4) * 0.92;
+    const f = footing(ax, az, bx, bz);
+    const y = f.base + f.extra;
     // Batentes nas duas pontas e verga por cima (quando a parede é mais alta que a porta).
     for (const [s0, s1] of [[0, jamb], [len - jamb, len]]) {
-      const b = segmentBox(ax + ux * s0, az + uz * s0, ax + ux * s1, az + uz * s1, 0, { height: H, thick: WALL_THICKNESS * 1.1, y0: 0, kind: 'jamb', style });
+      const b = segmentBox(ax + ux * s0, az + uz * s0, ax + ux * s1, az + uz * s1, 0, { height: H + f.extra, thick: WALL_THICKNESS * 1.1, y0: f.base, kind: 'jamb', style });
       if (b) boxes.push(b);
     }
     if (H > doorH + 0.02) {
-      const b = segmentBox(ax, az, bx, bz, 0, { height: H - doorH, thick: WALL_THICKNESS, y0: doorH, kind: 'wall', style });
+      const b = segmentBox(ax, az, bx, bz, 0, { height: H - doorH, thick: WALL_THICKNESS, y0: y + doorH, kind: 'wall', style });
       if (b) boxes.push(b);
     }
     // Folha: fechada fica no vão; aberta gira 80° em torno da dobradiça (lado "a"), para o lado +n, como no 2D.
@@ -120,7 +182,7 @@ export function buildSceneData(doc: MapDocument, wallHeight: WallHeight = 'media
     const ang = s.open ? (80 * Math.PI) / 180 : 0;
     const vx = ux * Math.cos(ang) + nx * Math.sin(ang);
     const vz = uz * Math.cos(ang) + nz * Math.sin(ang);
-    const leaf = segmentBox(hx, hz, hx + vx * L, hz + vz * L, 0, { height: doorH, thick: 0.08, y0: 0, kind: 'door', style });
+    const leaf = segmentBox(hx, hz, hx + vx * L, hz + vz * L, 0, { height: doorH, thick: 0.08, y0: y, kind: 'door', style });
     if (leaf) boxes.push(leaf);
   }
 
@@ -131,7 +193,7 @@ export function buildSceneData(doc: MapDocument, wallHeight: WallHeight = 'media
     const w = a.w * o.scale, d = a.h * o.scale;
     const p: Prop = {
       id: o.id, asset: o.asset, x: o.x / cell, z: o.y / cell, w, d,
-      rotY: (-o.rot * Math.PI) / 180, height: 0, base: 0,
+      rotY: (-o.rot * Math.PI) / 180, height: 0, base: 0, ground: surface(o.x, o.y),
     };
     if (o.asset === 'arvore') {
       p.base = 1.25 * o.scale;
@@ -144,14 +206,26 @@ export function buildSceneData(doc: MapDocument, wallHeight: WallHeight = 'media
   }
 
   const minis: Mini[] = doc.tokens.all().map((t) => ({
-    id: t.id, name: t.name, color: t.color, x: t.x / cell, z: t.y / cell, size: t.size,
+    id: t.id, name: t.name, color: t.color, x: t.x / cell, z: t.y / cell, size: t.size, ground: surface(t.x, t.y),
+    ...(t.template ? { template: t.template } : {}),
   }));
 
-  let hasWater = false;
   const { cols, rows } = doc.grid;
-  for (let r = 0; r < rows && !hasWater; r++) for (let c = 0; c < cols; c++) if (doc.terrain.get(c, r) === WATER_TERRAIN) { hasWater = true; break; }
+  const water: SceneData['water'] = [];
+  let minHeight = 0;
+  let hasRelief = false;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const level = doc.elevation.get(c, r) - ELEV_ZERO;
+      if (level) hasRelief = true;
+      minHeight = Math.min(minHeight, level * LEVEL_HEIGHT - WATER_DEPTH);
+      if (doc.terrain.get(c, r) !== WATER_TERRAIN) continue;
+      const poly = doc.grid.cellPolygon({ col: c, row: r }).map((p) => [p.x / cell, p.y / cell] as [number, number]);
+      water.push({ poly, y: level * LEVEL_HEIGHT - WATER_DEPTH * 0.3 });
+    }
+  }
 
-  return { cols, rows, width: bounds.width / cell, depth: bounds.height / cell, boxes, props, minis, hasWater };
+  return { cols, rows, width: bounds.width / cell, depth: bounds.height / cell, boxes, props, minis, hasWater: water.length > 0, water, minHeight, hasRelief };
 }
 
 /**
@@ -159,22 +233,13 @@ export function buildSceneData(doc: MapDocument, wallHeight: WallHeight = 'media
  * a água afunda, com borda suave.
  */
 export function groundHeights(doc: MapDocument, segX: number, segZ: number): Float32Array {
-  const cell = doc.grid.cellSize;
   const b = doc.grid.worldBounds();
-  const wet = (px: number, py: number) => {
-    const c = doc.grid.worldToCell({ x: px, y: py });
-    return c ? doc.terrain.get(c.col, c.row) === WATER_TERRAIN : false;
-  };
+  const surface = makeSurface(doc);
   const out = new Float32Array((segX + 1) * (segZ + 1));
-  const r = cell * 0.35;
   for (let j = 0; j <= segZ; j++) {
     for (let i = 0; i <= segX; i++) {
-      const px = b.x + (i / segX) * b.width;
-      const py = b.y + (j / segZ) * b.height;
-      // Fundo só onde o ponto e os vizinhos próximos são água: margem com rampa.
-      let n = 0;
-      for (const [ox, oy] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) if (wet(px + ox, py + oy)) n++;
-      out[j * (segX + 1) + i] = n ? -WATER_DEPTH * (n / 5) ** 1.5 : 0;
+      const h = surface(b.x + (i / segX) * b.width, b.y + (j / segZ) * b.height);
+      out[j * (segX + 1) + i] = h || 0;
     }
   }
   return out;

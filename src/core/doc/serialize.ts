@@ -2,6 +2,8 @@ import { MapDocument, type NewMapOptions } from './MapDocument';
 import type { CustomAsset, MapObject, Note, Token } from './objects';
 import { DEFAULT_VISION, OBJECT_ASSETS } from './objects';
 import { styleField, type WallSegment } from './walls';
+import { cleanSheet, tokenTemplate } from './tokenTemplates';
+import { clampLevel, ELEV_ZERO, hasRelief } from './elevation';
 
 /** Formato do arquivo .rpgmap (JSON). */
 export interface MapFile {
@@ -11,6 +13,8 @@ export interface MapFile {
   /** Camadas de células comprimidas (RLE + base64). */
   terrain: string;
   fog: string;
+  /** Elevação (ausente em mapas planos e em arquivos antigos). */
+  elevation?: string;
   walls: WallSegment[];
   objects: MapObject[];
   tokens: Token[];
@@ -33,6 +37,7 @@ export function serializeDoc(doc: MapDocument): MapFile {
     options: { ...doc.options },
     terrain: encodeLayer(doc.terrain.toArray()),
     fog: encodeLayer(doc.fog.toArray()),
+    ...(hasRelief(doc.elevation) ? { elevation: encodeLayer(doc.elevation.toArray()) } : {}),
     walls: doc.walls.all(),
     objects: doc.objects.all(),
     tokens: doc.tokens.all(),
@@ -73,6 +78,11 @@ export function parseMap(text: string | MapFile): MapDocument {
   const n = options.cols * options.rows;
   doc.terrain.loadArray(decodeLayer(f.terrain, n));
   doc.fog.loadArray(f.fog ? decodeLayer(f.fog, n) : new Uint8Array(n));
+  if (f.elevation) {
+    const e = decodeLayer(f.elevation, n);
+    for (let i = 0; i < e.length; i++) e[i] = clampLevel(e[i] - ELEV_ZERO) + ELEV_ZERO;
+    doc.elevation.loadArray(e);
+  }
   for (const w of arr(f.walls)) {
     if (isPoint(w?.a) && isPoint(w?.b) && typeof w.id === 'string') {
       const kind = w.kind === 'door' ? 'door' : 'wall';
@@ -105,6 +115,8 @@ export function parseMap(text: string | MapFile): MapDocument {
         size: finite(t.size) && t.size > 0 ? t.size : 1,
         color: typeof t.color === 'string' && /^#[0-9a-f]{6}$/i.test(t.color) ? t.color : '#888888',
         ...(t.pc ? { pc: true, vision: finite(t.vision) && t.vision > 0 ? Math.min(60, t.vision) : DEFAULT_VISION } : {}),
+        ...(tokenTemplate(t.template) ? { template: t.template } : {}),
+        ...(cleanSheet(t.sheet) ? { sheet: cleanSheet(t.sheet) } : {}),
       });
     }
   }
