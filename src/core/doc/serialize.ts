@@ -3,6 +3,7 @@ import type { CustomAsset, MapLink, MapObject, Note, Token } from './objects';
 import { DEFAULT_VISION, OBJECT_ASSETS } from './objects';
 import { styleField, type WallSegment } from './walls';
 import { cleanSheet, tokenTemplate } from './tokenTemplates';
+import { cleanInitiative, type Initiative } from './initiative';
 import { clampLevel, ELEV_ZERO, hasRelief } from './elevation';
 
 /** Formato do arquivo .rpgmap (JSON). */
@@ -25,6 +26,8 @@ export interface MapFile {
   links?: MapLink[];
   /** Imagens importadas (só as usadas por algum objeto). */
   assets?: CustomAsset[];
+  /** Ordem de iniciativa (ausente sem combate). */
+  initiative?: Initiative;
 }
 
 export const FORMAT = 'atlas-board-map';
@@ -49,6 +52,7 @@ export function serializeDoc(doc: MapDocument): MapFile {
     notes: doc.notes.all(),
     ...(doc.links.size ? { links: doc.links.all() } : {}),
     assets: usedAssets(doc),
+    ...(doc.initiative.get().entries.length ? { initiative: doc.initiative.get() } : {}),
   };
 }
 
@@ -141,6 +145,7 @@ export function parseMap(text: string | MapFile): MapDocument {
       });
     }
   }
+  if (f.initiative) doc.initiative.set(cleanInitiative(f.initiative, (id) => !!doc.tokens.get(id)));
   return doc;
 }
 

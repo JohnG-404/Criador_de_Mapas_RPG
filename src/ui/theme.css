@@ -411,6 +411,49 @@ kbd, .help-list kbd, .panel .help kbd {
 [data-contrast='alto'] .maps .badge { background: #fff; color: #000; border-color: #fff; }
 [data-contrast='alto'] .panel button.primary { background: #ffd400; color: #000; border: 2px solid #ffd400; box-shadow: none; }
 
+/* ---------- painel Mesa (dados e iniciativa) e ficha completa */
+.table-dock, .sheet-dialog { background-color: var(--panel); background-image: var(--leather); }
+.table-dock { border-left: 1px solid #000; box-shadow: inset 1px 0 0 rgba(224, 173, 74, 0.3), -8px 0 24px rgba(0, 0, 0, 0.5); zoom: var(--ui-scale); }
+.sheet-dialog { border: 1px solid var(--btn-border); box-shadow: inset 0 0 0 1px var(--gold-line), 0 20px 60px rgba(0, 0, 0, 0.7); border-radius: calc(var(--radius) + 4px); zoom: var(--ui-scale); }
+.dock-tabs { border-bottom-color: #000; box-shadow: 0 1px 0 var(--gold-line); }
+.dock-tabs button { font-family: var(--font-display); letter-spacing: 0.06em; }
+.dock-body h3, .sheet-body h3, .sheet-title h2 { font-family: var(--font-display); color: var(--accent); letter-spacing: 0.1em; }
+.sheet-title h2 { color: var(--accent-strong); letter-spacing: 0.04em; }
+.dock-body button, .sheet-dialog button, .dock-open {
+  color: var(--btn-text);
+  background: linear-gradient(180deg, var(--btn-top), var(--btn-bot));
+  border: 1px solid var(--btn-border);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 rgba(255, 226, 170, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.45);
+  transition: border-color var(--speed), background var(--speed), color var(--speed);
+}
+.dock-body button:hover:not(:disabled), .sheet-dialog button:hover:not(:disabled), .dock-open:hover { border-color: var(--btn-hover); }
+.dock-body button.primary, .sheet-dialog button.primary {
+  background: linear-gradient(180deg, #f2c66a, #c88f2c); color: var(--ink); border-color: #f5cd77; font-weight: 700;
+}
+.dock-body .segmented button.active, .dock-body .dock-tabs button.active, .sheet-dialog .cond-chip.on {
+  background: linear-gradient(180deg, var(--sel-top), var(--sel-bot)); color: #fff3d4;
+}
+.dock-body .stepper button, .dock-body .segmented button, .dock-body .ini-name, .dock-body button.icon, .sheet-dialog button.icon,
+.sheet-dialog .sheet-close, .dock-body .danger-text, .sheet-dialog .danger-text, .dock-tabs button { box-shadow: none; }
+.dock-tabs button, .dock-body .ini-name, .dock-body button.icon, .sheet-dialog button.icon, .sheet-dialog .sheet-close { background: transparent; border-color: transparent; }
+.dock-tabs button.active { background: transparent; color: var(--accent-strong); border-bottom: 2px solid var(--accent); }
+.dock-body input, .sheet-dialog input, .sheet-dialog select, .sheet-dialog textarea { background: var(--input-bg); border-color: var(--panel-border); border-radius: var(--radius); }
+.dock-body input:focus, .sheet-dialog :is(input, select, textarea):focus { border-color: var(--accent); outline: none; }
+.ini-row.active { background: linear-gradient(180deg, var(--sel-top), var(--sel-bot)); }
+.dice-hidden { background: var(--danger-bg); }
+
+[data-contrast='alto'] .table-dock, [data-contrast='alto'] .sheet-dialog { background: #000; box-shadow: 0 0 0 2px #fff; }
+[data-contrast='alto'] :is(.dock-body, .sheet-dialog) button:not(.ini-name):not(.icon):not(.sheet-close),
+[data-contrast='alto'] .dock-open { background: #000; color: #fff; border: 2px solid #fff; }
+[data-contrast='alto'] :is(.dock-body, .sheet-dialog) button:hover:not(:disabled) { border-color: #ffd400; color: #ffd400; }
+[data-contrast='alto'] :is(.dock-body button.primary, .sheet-dialog button.primary) { background: #ffd400; color: #000; border-color: #ffd400; }
+[data-contrast='alto'] :is(.dock-body .segmented button.active, .sheet-dialog .cond-chip.on, .ini-row.active) { background: #ffd400; color: #000; }
+[data-contrast='alto'] .ini-row.active .ini-meta, [data-contrast='alto'] .ini-row.active .ini-name { color: #000; }
+[data-contrast='alto'] .dock-tabs button.active { color: #ffd400; border-bottom-color: #ffd400; }
+[data-contrast='alto'] :is(.roll, .ini-row, .attr, .save, .attack) { background: #000; border-color: #fff; }
+[data-contrast='alto'] :is(.dock-body, .sheet-dialog) :is(input, select, textarea) { background: #000; color: #fff; border: 2px solid #fff; }
+
 /* ---------- conta e nuvem (login, Meus mapas, convites) */
 .dialog :is(.link-row, .callout, .cloud-list) button {
   font: inherit; font-size: 13px; padding: 5px 10px; cursor: pointer;

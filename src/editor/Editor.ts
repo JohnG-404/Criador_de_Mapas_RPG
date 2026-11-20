@@ -15,6 +15,9 @@ import { PaintCommand } from '../core/history/PaintCommand';
 import { floodFill } from '../core/tools/floodFill';
 import { strokeCells } from '../core/tools/strokeCells';
 import { cleanSheet, tokenTemplate, type TokenSheet } from '../core/doc/tokenTemplates';
+import { InitiativeCommand, nextTurn, prevTurn, pruneEntries, removeEntry, upsertEntries, EMPTY_INITIATIVE, type Initiative } from '../core/doc/initiative';
+import { rollExpression } from '../core/dice/dice';
+import { initiativeExpr, initiativeTiebreak } from '../core/sheets/systems';
 import { brushAmount, clampLevel, distanceToStroke, ELEV_ZERO, smoothedLevel, type ElevMode } from '../core/doc/elevation';
 
 export type ToolId = 'pan' | 'select' | 'brush' | 'eraser' | 'bucket' | 'elevation' | 'wall' | 'door' | 'object' | 'token' | 'fog' | 'ruler' | 'note' | 'link';
@@ -730,6 +733,58 @@ export class Editor {
     this.commit(this.doc.tokens, 'Ficha', [[t.id, rest]]);
   }
 
+  // ---- iniciativa
+
+  /**
+   * Rola a iniciativa dos tokens dados (ou de todos com ficha que ainda não
+   * estão na lista, mais os personagens de jogador) e reordena. Devolve as
+   * rolagens para o registro de dados.
+   */
+  rollInitiative(ids?: string[], roller: (expr: string, token: Token) => number = (e) => rollExpression(e).total): { token: Token; total: number }[] {
+    const ini = this.doc.initiative.get();
+    const inList = new Set(ini.entries.map((e) => e.id));
+    const tokens = ids
+      ? ids.map((id) => this.doc.tokens.get(id)).filter((t): t is Token => !!t)
+      : this.doc.tokens.all().filter((t) => !inList.has(t.id) && (t.sheet || t.pc));
+    if (!tokens.length) return [];
+    const rolls = tokens.map((token) => ({ token, total: roller(initiativeExpr(token.sheet), token) }));
+    const next = upsertEntries(ini, rolls.map(({ token, total }) => ({ id: token.id, value: total, tie: initiativeTiebreak(token.sheet) })));
+    this.setInitiative('Rolar iniciativa', next);
+    return rolls;
+  }
+
+  setInitiativeValue(id: string, value: number) {
+    const ini = this.doc.initiative.get();
+    const e = ini.entries.find((x) => x.id === id);
+    if (!e || !Number.isFinite(value)) return;
+    this.setInitiative('Iniciativa', upsertEntries(ini, [{ ...e, value: Math.round(value) }]));
+  }
+
+  /** Põe na lista sem rolar (valor manual). */
+  addToInitiative(id: string, value = 10) {
+    const t = this.doc.tokens.get(id);
+    if (!t) return;
+    this.setInitiative('Entrar na iniciativa', upsertEntries(this.doc.initiative.get(), [{ id, value, tie: initiativeTiebreak(t.sheet) }]));
+  }
+
+  removeFromInitiative(id: string) { this.setInitiative('Sair da iniciativa', removeEntry(this.doc.initiative.get(), id)); }
+  nextTurn() { this.setInitiative('Próxima vez', nextTurn(this.doc.initiative.get())); }
+  prevTurn() { this.setInitiative('Vez anterior', prevTurn(this.doc.initiative.get())); }
+  clearInitiative() { this.setInitiative('Encerrar combate', EMPTY_INITIATIVE); }
+
+  /** Seleciona o token (ferramenta Selecionar), por exemplo ao clicar na lista de iniciativa. */
+  selectToken(id: string) {
+    if (!this.doc.tokens.get(id)) return;
+    this.endGestures();
+    this.set({ tool: 'select', selection: { layer: 'tokens', id } });
+    this.refreshOverlay();
+  }
+
+  private setInitiative(label: string, next: Initiative) {
+    const before = this.doc.initiative.get();
+    this.history.execute(new InitiativeCommand(label, this.doc.initiative, before, next));
+  }
+
   renameSelectedToken(name: string) {
     const sel = this.state.selection;
     if (sel?.layer !== 'tokens') return;
@@ -920,7 +975,7 @@ export class Editor {
     const token: Token = tpl
       ? {
         id, ...pos, name: nextTemplateName(tpl.name, used), size: tpl.size, color: tpl.color,
-        template: tpl.key, sheet: { ...tpl.sheet },
+        template: tpl.key, sheet: structuredClone(tpl.sheet),
         ...(tpl.kind === 'pc' ? { pc: true, vision: DEFAULT_VISION } : {}),
       }
       : { id, name: nextTokenName(used), ...pos, size: 1, color: this.state.tokenColor };
@@ -947,7 +1002,13 @@ export class Editor {
     // Mexer em tokens ou paredes (ex.: abrir uma porta) pode revelar mais da névoa.
     const affectsSight = (layer as unknown) === this.doc.tokens || (layer as unknown) === this.doc.walls;
     const fog = affectsSight && this.state.autoReveal && !cmd.isEmpty() ? this.visionFogCommand() : null;
-    this.history.push(fog ? new CompositeCommand(label, [cmd, fog]) : cmd);
+    // Token apagado sai da iniciativa no mesmo passo do histórico.
+    const ini = this.doc.initiative.get();
+    const pruned = (layer as unknown) === this.doc.tokens ? pruneEntries(ini, (id) => !!this.doc.tokens.get(id)) : ini;
+    const iniCmd = pruned !== ini ? new InitiativeCommand(label, this.doc.initiative, ini, pruned) : null;
+    iniCmd?.apply();
+    const parts = [cmd, ...(fog ? [fog] : []), ...(iniCmd ? [iniCmd] : [])];
+    this.history.push(parts.length > 1 ? new CompositeCommand(label, parts) : cmd);
   }
 
   private refreshOverlay() {

@@ -155,6 +155,14 @@ export class MapView {
     this.afterCameraChange();
   }
 
+  /** Centraliza a câmera num ponto do mundo, sem mudar o zoom (ex.: token da vez). */
+  centerOn(p: { x: number; y: number }) {
+    const r = this.camera.visibleWorldRect();
+    this.camera.x = p.x - r.width / 2;
+    this.camera.y = p.y - r.height / 2;
+    this.afterCameraChange();
+  }
+
   /** Área do mundo visível agora (para mandar aos jogadores). */
   visibleRect() { return this.camera.visibleWorldRect(); }
 

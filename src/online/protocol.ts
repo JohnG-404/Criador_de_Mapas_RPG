@@ -7,7 +7,11 @@ import type { ViewRect } from '../editor/playerSync';
 export type RoomMessage =
   | { type: 'hello' }
   | { type: 'chunk'; v: number; i: number; n: number; data: string }
-  | { type: 'view'; rect: ViewRect };
+  | { type: 'view'; rect: ViewRect }
+  /** Rolagem de dados pública (as ocultas do mestre nunca são enviadas). */
+  | { type: 'roll'; roll: unknown }
+  /** Crônica recente, para quem acabou de entrar. */
+  | { type: 'rolls'; list: unknown };
 
 /** Cada mensagem do Realtime tem limite de tamanho; o mapa vai em pedaços. */
 export const CHUNK_CHARS = 180_000;
@@ -58,5 +62,13 @@ export function forPlayers(doc: MapDocument): MapFile {
     const c = doc.grid.worldToCell({ x, y });
     return !!c && doc.fog.get(c.col, c.row) === FOG_HIDDEN;
   };
-  return { ...map, notes: [], links: [], tokens: map.tokens.filter((t) => t.pc || !hidden(t.x, t.y)) };
+  const tokens = map.tokens.filter((t) => t.pc || !hidden(t.x, t.y));
+  const out: MapFile = { ...map, notes: [], links: [], tokens };
+  if (map.initiative) {
+    const visible = new Set(tokens.map((t) => t.id));
+    const current = map.initiative.entries[map.initiative.turn]?.id;
+    const entries = map.initiative.entries.filter((e) => visible.has(e.id));
+    out.initiative = { ...map.initiative, entries, turn: current && visible.has(current) ? entries.findIndex((e) => e.id === current) : -1 };
+  }
+  return out;
 }

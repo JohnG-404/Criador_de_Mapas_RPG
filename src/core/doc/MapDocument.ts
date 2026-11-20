@@ -6,6 +6,7 @@ import { registerCustomAssets, type CustomAsset, type MapLink, type MapObject, t
 import { TerrainLayer } from './TerrainLayer';
 import { ELEV_ZERO } from './elevation';
 import type { WallSegment } from './walls';
+import { InitiativeStore } from './initiative';
 
 export interface NewMapOptions {
   name: string;
@@ -40,6 +41,8 @@ export class MapDocument {
   readonly fog: TerrainLayer;
   /** Altura de cada célula (ver elevation.ts). Começa toda no nível 0. */
   readonly elevation: TerrainLayer;
+  /** Ordem de iniciativa do combate (ver initiative.ts). */
+  readonly initiative = new InitiativeStore();
 
   constructor(readonly options: NewMapOptions) {
     const { gridKind, cols, rows } = options;
