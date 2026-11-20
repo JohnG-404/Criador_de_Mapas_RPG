@@ -1,6 +1,6 @@
 import { MapDocument, type NewMapOptions } from './MapDocument';
-import type { MapObject, Token } from './objects';
-import { OBJECT_ASSETS } from './objects';
+import type { MapObject, Note, Token } from './objects';
+import { DEFAULT_VISION, OBJECT_ASSETS } from './objects';
 import type { WallSegment } from './walls';
 
 /** Formato do arquivo .rpgmap (JSON). */
@@ -14,6 +14,7 @@ export interface MapFile {
   walls: WallSegment[];
   objects: MapObject[];
   tokens: Token[];
+  notes?: Note[];
 }
 
 export const FORMAT = 'atlas-board-map';
@@ -31,6 +32,7 @@ export function serializeDoc(doc: MapDocument): MapFile {
     walls: doc.walls.all(),
     objects: doc.objects.all(),
     tokens: doc.tokens.all(),
+    notes: doc.notes.all(),
   };
 }
 
@@ -68,7 +70,8 @@ export function parseMap(text: string | MapFile): MapDocument {
   doc.fog.loadArray(f.fog ? decodeLayer(f.fog, n) : new Uint8Array(n));
   for (const w of arr(f.walls)) {
     if (isPoint(w?.a) && isPoint(w?.b) && typeof w.id === 'string') {
-      doc.walls.put(w.id, { id: w.id, a: w.a, b: w.b, kind: w.kind === 'door' ? 'door' : 'wall' });
+      const kind = w.kind === 'door' ? 'door' : 'wall';
+      doc.walls.put(w.id, { id: w.id, a: w.a, b: w.b, kind, ...(kind === 'door' && w.open ? { open: true } : {}) });
     }
   }
   const assets = new Set(OBJECT_ASSETS.map((a) => a.key));
@@ -84,7 +87,13 @@ export function parseMap(text: string | MapFile): MapDocument {
         name: typeof t.name === 'string' ? t.name.slice(0, 24) : '?',
         size: finite(t.size) && t.size > 0 ? t.size : 1,
         color: typeof t.color === 'string' && /^#[0-9a-f]{6}$/i.test(t.color) ? t.color : '#888888',
+        ...(t.pc ? { pc: true, vision: finite(t.vision) && t.vision > 0 ? Math.min(60, t.vision) : DEFAULT_VISION } : {}),
       });
+    }
+  }
+  for (const n of arr(f.notes)) {
+    if (typeof n?.id === 'string' && finite(n.x) && finite(n.y)) {
+      doc.notes.put(n.id, { id: n.id, x: n.x, y: n.y, text: typeof n.text === 'string' ? n.text.slice(0, 2000) : '' });
     }
   }
   return doc;

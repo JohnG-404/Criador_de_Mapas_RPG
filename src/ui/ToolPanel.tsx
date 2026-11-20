@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { OBJECT_ASSETS, TOKEN_COLORS } from '../core/doc/objects';
 import { TERRAINS } from '../core/doc/terrain';
 import { LAYERS, MAX_BRUSH, MIN_BRUSH, TOOLS, type Editor, type EditorState, type ToolId } from '../editor/Editor';
@@ -15,6 +15,8 @@ const TOOL_ICONS: Record<ToolId, string> = {
   door: 'M5 21V4h10v17M15 4l4 2v15M3 21h18M12 12.5v.5',
   object: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5',
   fog: 'M4 10h11a3 3 0 1 0-3-3M3 14h15a3 3 0 1 1-3 3M6 18h5',
+  ruler: 'M3 17 17 3l4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2',
+  note: 'M5 3h10l4 4v14H5zM15 3v4h4M8 11h8M8 15h6',
   token: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM7.5 17.5c1-2 2.6-3 4.5-3s3.5 1 4.5 3',
 };
 
@@ -93,8 +95,28 @@ export function ToolPanel({ editor, state }: { editor: Editor; state: EditorStat
             <button onClick={() => editor.fogAll(false)}>Revelar tudo</button>
           </div>
           <p className="help">Pinte com o mouse. <kbd>Alt</kbd> inverte o modo durante o traço. Os jogadores veem a névoa opaca.</p>
+          <label className="check">
+            <input type="checkbox" checked={state.autoReveal} onChange={(e) => editor.setAutoReveal(e.target.checked)} />
+            Revelar pela visão dos personagens
+          </label>
+          <p className="help">Tokens marcados como personagem de jogador revelam o que enxergam ao se mover. Paredes e portas fechadas bloqueiam.</p>
         </section>
       )}
+
+      {tool === 'ruler' && (
+        <section>
+          <h2>Régua</h2>
+          <p className="help">Arraste de uma célula a outra para medir. A diagonal conta como 1 célula. <kbd>Esc</kbd> apaga a medida.</p>
+        </section>
+      )}
+
+      {tool === 'note' && !editor.selectedNote() && (
+        <section>
+          <h2>Notas do mestre</h2>
+          <p className="help">Clique no mapa para prender uma nota. Só você vê as notas; a janela dos jogadores não mostra.</p>
+        </section>
+      )}
+      {(tool === 'note' || tool === 'select') && editor.selectedNote() && <NotePanel editor={editor} />}
 
       {usesBrush || terrainTool ? (
         <section className={usesBrush ? '' : 'dimmed'}>
@@ -165,7 +187,7 @@ export function ToolPanel({ editor, state }: { editor: Editor; state: EditorStat
         </section>
       )}
 
-      {tool === 'select' && <SelectionPanel editor={editor} state={state} />}
+      {tool === 'select' && !editor.selectedNote() && <SelectionPanel editor={editor} state={state} />}
 
       <section>
         <h2>Camadas</h2>
@@ -229,7 +251,7 @@ function SelectionPanel({ editor }: { editor: Editor; state: EditorState }) {
     return (
       <section>
         <h2>Seleção</h2>
-        <p className="help">Clique num objeto ou token para selecionar. Arraste para mover.</p>
+        <p className="help">Clique num objeto, token ou nota para selecionar e arraste para mover. Clique numa porta para abrir ou fechar.</p>
       </section>
     );
   }
@@ -267,7 +289,55 @@ function SelectionPanel({ editor }: { editor: Editor; state: EditorState }) {
         <span className="help">Tamanho {tok!.size.toLocaleString('pt-BR')}</span>
         <button onClick={() => editor.resizeSelection(1)} title="Aumentar (])" aria-label="Aumentar">+</button>
       </div>
+      <label className="check">
+        <input type="checkbox" checked={!!tok!.pc} onChange={(e) => editor.setTokenPc(e.target.checked)} />
+        Personagem de jogador
+      </label>
+      {tok!.pc && (
+        <label className="inline-number">
+          Visão (células)
+          <input
+            type="number"
+            min={1}
+            max={60}
+            value={tok!.vision ?? 12}
+            onChange={(e) => editor.setTokenVision(Number(e.target.value) || 1)}
+          />
+        </label>
+      )}
       <button className="danger" onClick={() => editor.deleteSelection()}>Apagar (Del)</button>
+    </section>
+  );
+}
+
+function NotePanel({ editor }: { editor: Editor }) {
+  const note = editor.selectedNote()!;
+  const [text, setText] = useState(note.text);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { setText(note.text); }, [note.id, note.text]);
+  // Nota nova: foca o campo depois que o clique no mapa termina (senão o mapa pega o foco de volta).
+  useEffect(() => {
+    if (note.text) return;
+    const t = window.setTimeout(() => ref.current?.focus(), 0);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note.id]);
+  return (
+    <section data-testid="note-panel">
+      <h2><label htmlFor="note-text">Nota</label></h2>
+      <textarea
+        id="note-text"
+        className="text-input"
+        rows={6}
+        value={text}
+        maxLength={2000}
+        placeholder="Ex.: armadilha de dardos, CD 13 para perceber"
+        ref={ref}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => editor.setNoteText(text)}
+      />
+      <p className="help">A primeira linha aparece no mapa. Só o mestre vê.</p>
+      <button className="danger" onMouseDown={(e) => e.preventDefault()} onClick={() => editor.deleteSelection()}>Apagar nota</button>
     </section>
   );
 }

@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Rectangle } from 'pixi.js';
+import { Application, Container, Graphics, Rectangle, Text } from 'pixi.js';
 import { Camera } from '../core/camera/Camera';
 import type { MapDocument } from '../core/doc/MapDocument';
 import { objectAsset } from '../core/doc/objects';
@@ -45,6 +45,13 @@ export class MapView {
   private content: ContentRenderer | null = null;
   private fog: FogRenderer | null = null;
   private fogHolder = new Container();
+  private notesHolder = new Container();
+  private rulerLabel = new Text({
+    text: '',
+    resolution: 3,
+    style: { fontFamily: 'system-ui, sans-serif', fontWeight: '700', fontSize: 14, fill: 0x1b1e26 },
+  });
+  private rulerBg = new Graphics();
   private fittedSize = '';
   private overlayLayer = new Graphics();
   private layers: Record<LayerId, LayerState> | null = null;
@@ -95,7 +102,10 @@ export class MapView {
     canvas.setAttribute('aria-label', 'Área do mapa');
     canvas.dataset.testid = 'map-canvas';
 
-    this.world.addChild(this.mapLayer, this.terrainHolder, this.gridLayer, this.contentHolder, this.fogHolder, this.hoverLayer, this.overlayLayer);
+    this.world.addChild(this.mapLayer, this.terrainHolder, this.gridLayer, this.contentHolder, this.fogHolder, this.notesHolder, this.hoverLayer, this.overlayLayer, this.rulerBg, this.rulerLabel);
+    this.rulerLabel.anchor.set(0.5);
+    this.rulerLabel.visible = false;
+    this.notesHolder.visible = this.mode === 'gm';
     this.app.stage.addChild(this.world);
     this.camera.setViewSize(this.app.screen.width, this.app.screen.height);
     this.bindInput();
@@ -138,6 +148,15 @@ export class MapView {
     this.afterCameraChange();
   }
 
+  /** Área do mundo visível agora (para mandar aos jogadores). */
+  visibleRect() { return this.camera.visibleWorldRect(); }
+
+  /** Enquadra uma área (vinda do mestre). */
+  showRect(rect: { x: number; y: number; width: number; height: number }) {
+    this.camera.fit(rect, 0);
+    this.afterCameraChange();
+  }
+
   zoomIn() { this.zoomBy(ZOOM_STEP); }
   zoomOut() { this.zoomBy(1 / ZOOM_STEP); }
 
@@ -156,10 +175,12 @@ export class MapView {
     const saved = {
       scale: this.world.scale.x, x: this.world.position.x, y: this.world.position.y,
       grid: this.gridLayer.visible, fog: this.fogHolder.visible, hover: this.hoverLayer.visible, overlay: this.overlayLayer.visible,
+      notes: this.notesHolder.visible, ruler: this.rulerBg.visible,
     };
     this.world.scale.set(1);
     this.world.position.set(0, 0);
     this.fogHolder.visible = this.hoverLayer.visible = this.overlayLayer.visible = false;
+    this.notesHolder.visible = this.rulerBg.visible = this.rulerLabel.visible = false;
     // Desenha o grid inteiro (o normal só cobre a área visível).
     this.gridLayer.visible = opts.grid;
     if (opts.grid) this.drawFullGrid(1 / scale);
@@ -180,6 +201,8 @@ export class MapView {
       this.fogHolder.visible = saved.fog;
       this.hoverLayer.visible = saved.hover;
       this.overlayLayer.visible = saved.overlay;
+      this.notesHolder.visible = saved.notes;
+      this.rulerBg.visible = saved.ruler;
       this.gridCache = null;
       this.invalidate();
     }
@@ -224,6 +247,7 @@ export class MapView {
     content.onChange = () => this.invalidate();
     content.start();
     this.contentHolder.addChild(content.objects, content.walls, content.tokens);
+    this.notesHolder.addChild(content.notes);
     const fog = new FogRenderer(this.doc, this.mode);
     fog.buildAll();
     fog.onChange = () => this.invalidate();
@@ -273,6 +297,7 @@ export class MapView {
       this.content.walls.visible = layers.walls.visible;
       this.content.objects.visible = layers.objects.visible;
       this.content.tokens.visible = layers.tokens.visible;
+      this.content.notes.visible = layers.notes.visible;
     }
   }
 
@@ -409,7 +434,8 @@ export class MapView {
     const g = this.overlayLayer.clear();
     const z = this.camera.zoom;
     const cell = this.doc.grid.cellSize;
-    const { wallPreview, doorPreview, eraseTarget } = this.editor.overlay;
+    const { wallPreview, doorPreview, eraseTarget, ruler } = this.editor.overlay;
+    this.drawRuler(ruler, z);
     if (wallPreview) {
       for (const [a, b] of wallPreview.segments) g.moveTo(a.x, a.y).lineTo(b.x, b.y);
       if (wallPreview.segments.length) {
@@ -440,10 +466,33 @@ export class MapView {
         g.poly(pts).stroke({ width: 2 / z, color: theme.selection, alpha: 1 });
       }
     }
+    const note = this.editor.selectedNote();
+    if (note && this.layers?.notes.visible) {
+      const h = cell * 0.31 + pad;
+      g.rect(note.x - h, note.y - h, h * 2, h * 2).stroke({ width: 2 / z, color: theme.selection, alpha: 1 });
+    }
     const tok = this.editor.selectedToken();
     if (tok && this.layers?.tokens.visible) {
       g.circle(tok.x, tok.y, (tok.size * cell) / 2 * 0.9 + pad).stroke({ width: 2 / z, color: theme.selection, alpha: 1 });
     }
+  }
+
+  private drawRuler(ruler: import('../editor/Editor').Ruler | null, z: number) {
+    const g = this.rulerBg.clear();
+    this.rulerLabel.visible = !!ruler;
+    if (!ruler) return;
+    const { a, b } = ruler;
+    g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 5 / z, color: 0x000000, alpha: 0.5, cap: 'round' });
+    g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 2.5 / z, color: theme.hoverFill, alpha: 1, cap: 'round' });
+    for (const p of [a, b]) g.circle(p.x, p.y, 5 / z).fill(theme.hoverFill).stroke({ width: 1.5 / z, color: 0x000000, alpha: 0.6 });
+    const label = this.rulerLabel;
+    label.text = `${ruler.cells} ${ruler.cells === 1 ? 'célula' : 'células'} · ${ruler.meters.toLocaleString('pt-BR')} m`;
+    label.scale.set(1 / z);
+    // Etiqueta logo acima do ponto final.
+    label.position.set(b.x, b.y - 18 / z);
+    const w = label.width + 12 / z;
+    const h = label.height + 6 / z;
+    g.roundRect(label.x - w / 2, label.y - h / 2, w, h, 5 / z).fill({ color: theme.hoverFill }).stroke({ width: 1 / z, color: 0x000000, alpha: 0.5 });
   }
 
   private setHover(cell: Cell | null) {

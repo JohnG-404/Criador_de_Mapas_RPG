@@ -18,14 +18,17 @@ export function PlayerApp() {
     const view = new MapView(editor, {}, 'player');
     void view.mount(hostRef.current!);
     (window as unknown as { atlas?: unknown }).atlas = { editor, view };
-    const stop = listenToGm((map) => {
-      try {
-        editor.loadDocument(parseMap(map));
-        setConnected(true);
-      } catch {
-        // Mensagem inválida: mantém o mapa atual.
-      }
-    });
+    const stop = listenToGm(
+      (map) => {
+        try {
+          editor.loadDocument(parseMap(map));
+          setConnected(true);
+        } catch {
+          // Mensagem inválida: mantém o mapa atual.
+        }
+      },
+      (rect) => view.showRect(rect),
+    );
     return () => {
       stop();
       view.destroy();

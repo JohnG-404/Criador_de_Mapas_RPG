@@ -2,7 +2,7 @@ import { HexGrid } from '../grid/HexGrid';
 import type { GridKind, GridSystem } from '../grid/GridSystem';
 import { SquareGrid } from '../grid/SquareGrid';
 import { ItemLayer } from './ItemLayer';
-import type { MapObject, Token } from './objects';
+import type { MapObject, Note, Token } from './objects';
 import { TerrainLayer } from './TerrainLayer';
 import type { WallSegment } from './walls';
 
@@ -28,6 +28,7 @@ export class MapDocument {
   readonly walls = new ItemLayer<WallSegment>();
   readonly objects = new ItemLayer<MapObject>();
   readonly tokens = new ItemLayer<Token>();
+  readonly notes = new ItemLayer<Note>();
   /** Névoa de guerra: 1 = escondido dos jogadores, 0 = visível. Começa toda visível. */
   readonly fog: TerrainLayer;
 

@@ -30,6 +30,7 @@ export function App() {
   const dialogOpen = newMapOpen || genOpen;
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const broadcastRef = useRef<ReturnType<typeof startPlayerBroadcast> | null>(null);
 
   const notify = useCallback((text: string, error = false) => setNotice({ text, error }), []);
   useEffect(() => {
@@ -46,8 +47,9 @@ export function App() {
         notify('Não foi possível salvar automaticamente no navegador. Use Salvar para guardar o arquivo.', true);
       }
     });
-    const stopBroadcast = startPlayerBroadcast(editor);
-    return () => { stopAutosave(); stopBroadcast(); };
+    const broadcast = startPlayerBroadcast(editor);
+    broadcastRef.current = broadcast;
+    return () => { stopAutosave(); broadcast.stop(); broadcastRef.current = null; };
   }, [editor, notify]);
 
   const save = useCallback(async () => {
@@ -111,7 +113,7 @@ export function App() {
         <div className="brand">
           <img src="./favicon.svg" alt="" width={22} height={22} />
           <span>Atlas Board</span>
-          <span className="tag">fase 4</span>
+          <span className="tag">fase 5</span>
         </div>
         <div className="toolbar" role="toolbar" aria-label="Arquivo e histórico">
           <button onClick={() => setNewMapOpen(true)}>Novo mapa</button>
@@ -149,6 +151,18 @@ export function App() {
           <span className="sep" />
           <button onClick={openPlayerWindow} title="Abre uma janela só com o mapa e a névoa opaca, para mostrar aos jogadores">
             Janela dos jogadores
+          </button>
+          <button
+            onClick={() => {
+              const rect = viewRef.current?.visibleRect();
+              if (rect && broadcastRef.current) {
+                broadcastRef.current.showView(rect);
+                notify('Os jogadores agora veem esta área');
+              }
+            }}
+            title="A janela dos jogadores passa a mostrar exatamente a área que você está vendo"
+          >
+            Mostrar esta área
           </button>
           <label className="toggle">
             <input type="checkbox" checked={state.showGrid} onChange={(e) => editor.setShowGrid(e.target.checked)} />

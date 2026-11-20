@@ -1,6 +1,8 @@
 import { ItemsCommand, newId } from '../core/doc/ItemLayer';
 import { FOG_CLEAR, FOG_HIDDEN, MapDocument, type NewMapOptions } from '../core/doc/MapDocument';
-import { hitObject, hitToken, OBJECT_ASSETS, TOKEN_COLORS, type MapObject, type Token } from '../core/doc/objects';
+import { DEFAULT_VISION, hitNote, hitObject, hitToken, OBJECT_ASSETS, TOKEN_COLORS, type MapObject, type Note, type Token } from '../core/doc/objects';
+import { visibleCells } from '../core/doc/vision';
+import type { ItemLayer } from '../core/doc/ItemLayer';
 import { EMPTY, TERRAINS } from '../core/doc/terrain';
 import {
   hitSegment, nearestEdge, rectangleSegments, samePoint, snapToVertex, subtractCollinear, type WallSegment,
@@ -12,8 +14,8 @@ import { PaintCommand } from '../core/history/PaintCommand';
 import { floodFill } from '../core/tools/floodFill';
 import { strokeCells } from '../core/tools/strokeCells';
 
-export type ToolId = 'pan' | 'select' | 'brush' | 'eraser' | 'bucket' | 'wall' | 'door' | 'object' | 'token' | 'fog';
-export type LayerId = 'terrain' | 'walls' | 'objects' | 'tokens' | 'fog';
+export type ToolId = 'pan' | 'select' | 'brush' | 'eraser' | 'bucket' | 'wall' | 'door' | 'object' | 'token' | 'fog' | 'ruler' | 'note';
+export type LayerId = 'terrain' | 'walls' | 'objects' | 'tokens' | 'fog' | 'notes';
 export type FogMode = 'reveal' | 'hide';
 
 export const TOOLS: { id: ToolId; name: string; key: string; layer: LayerId | null }[] = [
@@ -27,9 +29,12 @@ export const TOOLS: { id: ToolId; name: string; key: string; layer: LayerId | nu
   { id: 'object', name: 'Objeto', key: 'o', layer: 'objects' },
   { id: 'token', name: 'Token', key: 't', layer: 'tokens' },
   { id: 'fog', name: 'Névoa', key: 'n', layer: 'fog' },
+  { id: 'ruler', name: 'Régua', key: 'm', layer: null },
+  { id: 'note', name: 'Nota', key: 'a', layer: 'notes' },
 ];
 
 export const LAYERS: { id: LayerId; name: string }[] = [
+  { id: 'notes', name: 'Notas do mestre' },
   { id: 'fog', name: 'Névoa de guerra' },
   { id: 'tokens', name: 'Tokens' },
   { id: 'objects', name: 'Objetos' },
@@ -39,14 +44,19 @@ export const LAYERS: { id: LayerId; name: string }[] = [
 
 export interface LayerState { visible: boolean; locked: boolean }
 
-export type Selection = { layer: 'objects' | 'tokens'; id: string } | null;
+export type SelectableLayer = 'objects' | 'tokens' | 'notes';
+export type Selection = { layer: SelectableLayer; id: string } | null;
 
 /** O que a visualização desenha por cima do mapa durante um gesto. */
 export interface Overlay {
   wallPreview: { segments: [Point, Point][]; snap: Point } | null;
   doorPreview: { a: Point; b: Point } | null;
   eraseTarget: WallSegment | null;
+  ruler: Ruler | null;
 }
+
+/** Medida da régua: de centro de célula a centro de célula. */
+export interface Ruler { a: Point; b: Point; cells: number; meters: number }
 
 export const MIN_BRUSH = 1;
 export const MAX_BRUSH = 9;
@@ -60,6 +70,8 @@ export interface EditorState {
   objectAsset: string;
   tokenColor: string;
   fogMode: FogMode;
+  /** Revela a névoa pela visão dos personagens de jogador a cada movimento. */
+  autoReveal: boolean;
   selection: Selection;
   layers: Record<LayerId, LayerState>;
   canUndo: boolean;
@@ -92,10 +104,12 @@ export class Editor {
   private listeners = new Set<() => void>();
   private stroke: { cmd: PaintCommand; last: Point; value: number } | null = null;
   private wallDrag: { start: Point; end: Point; rect: boolean } | null = null;
-  private moveDrag: { layer: 'objects' | 'tokens'; id: string; dx: number; dy: number; before: MapObject | Token; moved: boolean } | null = null;
+  private moveDrag: { layer: SelectableLayer; id: string; dx: number; dy: number; before: MapObject | Token | Note; moved: boolean } | null = null;
+  private rulerDrag: { a: Point; b: Point } | null = null;
+  private ruler: Ruler | null = null;
   private hoverPoint: Point | null = null;
   private hoverAlt = false;
-  overlay: Overlay = { wallPreview: null, doorPreview: null, eraseTarget: null };
+  overlay: Overlay = { wallPreview: null, doorPreview: null, eraseTarget: null, ruler: null };
   private overlayListeners = new Set<() => void>();
 
   constructor(options: NewMapOptions = DEFAULT_MAP) {
@@ -108,6 +122,7 @@ export class Editor {
       objectAsset: OBJECT_ASSETS[0].key,
       tokenColor: TOKEN_COLORS[0],
       fogMode: 'hide',
+      autoReveal: true,
       selection: null,
       layers: {
         terrain: { visible: true, locked: false },
@@ -115,6 +130,7 @@ export class Editor {
         objects: { visible: true, locked: false },
         tokens: { visible: true, locked: false },
         fog: { visible: true, locked: false },
+        notes: { visible: true, locked: false },
       },
       canUndo: false,
       canRedo: false,
@@ -141,6 +157,7 @@ export class Editor {
 
   setTool(tool: ToolId) {
     this.endGestures();
+    this.ruler = null;
     this.set({ tool, selection: tool === 'select' ? this.state.selection : null });
     this.refreshOverlay();
   }
@@ -179,6 +196,31 @@ export class Editor {
   }
   setShowGrid(showGrid: boolean) { this.set({ showGrid }); }
   setFogMode(fogMode: FogMode) { this.set({ fogMode, tool: 'fog' }); }
+  setAutoReveal(autoReveal: boolean) {
+    this.set({ autoReveal });
+    if (autoReveal) this.revealVisionNow();
+  }
+
+  /** Revela agora o que os personagens de jogador enxergam (um passo do histórico). */
+  revealVisionNow() {
+    const cmd = this.visionFogCommand();
+    if (cmd) this.history.push(cmd);
+  }
+
+  /** Comando que revela a névoa nas células vistas pelos personagens de jogador (null se nada muda). */
+  private visionFogCommand(): PaintCommand | null {
+    const { doc } = this;
+    const pcs = doc.tokens.all().filter((t) => t.pc);
+    if (!pcs.length) return null;
+    const walls = doc.walls.all();
+    const cmd = new PaintCommand(doc.fog, 'Visão');
+    for (const t of pcs) {
+      for (const c of visibleCells(doc.grid, t, t.vision ?? DEFAULT_VISION, walls)) cmd.paint(c.col, c.row, FOG_CLEAR);
+    }
+    if (cmd.isEmpty()) return null;
+    doc.fog.flush();
+    return cmd;
+  }
 
   /** Cobre (ou revela) o mapa inteiro de uma vez, como um passo do histórico. */
   fogAll(hidden: boolean) {
@@ -242,6 +284,7 @@ export class Editor {
   /** Troca o documento (mapa novo, arquivo aberto, salvamento automático). */
   loadDocument(doc: MapDocument) {
     this.endGestures();
+    this.ruler = null;
     this.doc = doc;
     this.history.clear();
     this.set({ docVersion: this.state.docVersion + 1, selection: null });
@@ -269,6 +312,14 @@ export class Editor {
     const grid = this.doc.grid;
     if (!this.toolLayerEditable) return;
     if (tool === 'select') return this.selectAt(p);
+    if (tool === 'ruler') {
+      const c = this.snapCellCenter(p);
+      this.rulerDrag = { a: c, b: c };
+      this.ruler = this.measure(c, c);
+      this.refreshOverlay();
+      return;
+    }
+    if (tool === 'note') return this.placeNote(p);
     if (tool === 'wall' || tool === 'door') {
       if (mods.alt) return this.eraseWallAt(p);
       if (tool === 'door') return this.placeDoor(p);
@@ -313,6 +364,12 @@ export class Editor {
       return;
     }
     if (this.moveDrag) return this.dragSelection(p, !!mods.shift);
+    if (this.rulerDrag) {
+      this.rulerDrag.b = this.snapCellCenter(p);
+      this.ruler = this.measure(this.rulerDrag.a, this.rulerDrag.b);
+      this.refreshOverlay();
+      return;
+    }
     if (!this.stroke) return;
     this.paintSegment(this.stroke.last, p);
     this.stroke.last = p;
@@ -321,6 +378,7 @@ export class Editor {
   pointerUp() {
     if (this.wallDrag) return this.finishWall();
     if (this.moveDrag) return this.finishMove();
+    if (this.rulerDrag) { this.rulerDrag = null; return; }
     if (!this.stroke) return;
     this.history.push(this.stroke.cmd);
     this.stroke = null;
@@ -335,6 +393,25 @@ export class Editor {
 
   get isStroking() { return this.stroke !== null || this.wallDrag !== null || this.moveDrag !== null; }
 
+  /** Distância em células (diagonal conta 1 no grid quadrado, como na maioria dos sistemas) e em metros. */
+  private measure(a: Point, b: Point): Ruler {
+    const grid = this.doc.grid;
+    const ca = grid.worldToCell(a), cb = grid.worldToCell(b);
+    let cells = 0;
+    if (ca && cb) {
+      cells = grid.kind === 'square'
+        ? Math.max(Math.abs(ca.col - cb.col), Math.abs(ca.row - cb.row))
+        : Math.round(grid.distance(ca, cb));
+    }
+    return { a, b, cells, meters: Math.round(cells * this.doc.options.cellMeters * 10) / 10 };
+  }
+
+  clearRuler() {
+    if (!this.ruler) return;
+    this.ruler = null;
+    this.refreshOverlay();
+  }
+
   // ---- seleção (objetos e tokens)
   clearSelection() { if (this.state.selection) this.set({ selection: null }); }
 
@@ -342,6 +419,7 @@ export class Editor {
     const sel = this.state.selection;
     if (!sel) return;
     if (sel.layer === 'objects') this.commit(this.doc.objects, 'Apagar objeto', [[sel.id, null]]);
+    else if (sel.layer === 'notes') this.commit(this.doc.notes, 'Apagar nota', [[sel.id, null]]);
     else this.commit(this.doc.tokens, 'Apagar token', [[sel.id, null]]);
     this.set({ selection: null });
   }
@@ -380,6 +458,32 @@ export class Editor {
     return sel?.layer === 'objects' ? this.doc.objects.get(sel.id) ?? null : null;
   }
 
+  selectedNote() {
+    const sel = this.state.selection;
+    return sel?.layer === 'notes' ? this.doc.notes.get(sel.id) ?? null : null;
+  }
+
+  setNoteText(text: string) {
+    const n = this.selectedNote();
+    if (n && n.text !== text) this.commit(this.doc.notes, 'Editar nota', [[n.id, { ...n, text }]]);
+  }
+
+  /** Marca o token selecionado como personagem de jogador (a visão dele revela a névoa). */
+  setTokenPc(pc: boolean) {
+    const t = this.selectedToken();
+    if (!t || !!t.pc === pc) return;
+    const next: Token = { ...t, pc };
+    if (pc) next.vision = t.vision ?? DEFAULT_VISION;
+    else delete next.vision;
+    this.commit(this.doc.tokens, pc ? 'Personagem de jogador' : 'Token comum', [[t.id, next]]);
+  }
+
+  setTokenVision(cells: number) {
+    const t = this.selectedToken();
+    const vision = Math.min(60, Math.max(1, Math.round(cells)));
+    if (t?.pc && t.vision !== vision) this.commit(this.doc.tokens, 'Alcance da visão', [[t.id, { ...t, vision }]]);
+  }
+
   selectedToken() {
     const sel = this.state.selection;
     return sel?.layer === 'tokens' ? this.doc.tokens.get(sel.id) ?? null : null;
@@ -397,26 +501,37 @@ export class Editor {
       const t = this.doc.tokens.all().reverse().find((t) => hitToken(t, cell, p));
       if (t) hit = { layer: 'tokens', id: t.id };
     }
+    if (!hit && this.layerUsable('notes')) {
+      const n = this.doc.notes.all().reverse().find((n) => hitNote(n, cell, p));
+      if (n) hit = { layer: 'notes', id: n.id };
+    }
     if (!hit && this.layerUsable('objects')) {
       const o = this.doc.objects.all().reverse().find((o) => hitObject(o, cell, p));
       if (o) hit = { layer: 'objects', id: o.id };
     }
     this.set({ selection: hit });
-    if (!hit) return;
-    const item = this.doc[hit.layer].get(hit.id)!;
+    if (!hit) {
+      // Clicar numa porta com Selecionar abre ou fecha.
+      if (this.layerUsable('walls')) {
+        const door = hitSegment(this.doc.walls.all().filter((w) => w.kind === 'door'), p, cell * 0.35);
+        if (door) this.commit(this.doc.walls, door.open ? 'Fechar porta' : 'Abrir porta', [[door.id, { ...door, open: !door.open }]]);
+      }
+      return;
+    }
+    const item = this.layerOf(hit.layer).get(hit.id)!;
     this.moveDrag = { layer: hit.layer, id: hit.id, dx: item.x - p.x, dy: item.y - p.y, before: item, moved: false };
   }
 
   private dragSelection(p: Point, free: boolean) {
     const d = this.moveDrag!;
-    const layer = d.layer === 'objects' ? this.doc.objects : this.doc.tokens;
+    const layer = this.layerOf(d.layer);
     const item = layer.get(d.id);
     if (!item) return;
     const raw = { x: p.x + d.dx, y: p.y + d.dy };
-    const pos = d.layer === 'tokens' && !free ? this.snapCellCenter(raw) : free ? raw : this.snapHalf(raw);
+    const pos = d.layer === 'notes' || free ? raw : d.layer === 'tokens' ? this.snapCellCenter(raw) : this.snapHalf(raw);
     if (pos.x === item.x && pos.y === item.y) return;
     d.moved = true;
-    (layer as typeof this.doc.objects).put(d.id, { ...(item as MapObject), ...pos });
+    layer.put(d.id, { ...item, ...pos });
     layer.emit();
   }
 
@@ -424,12 +539,17 @@ export class Editor {
     const d = this.moveDrag!;
     this.moveDrag = null;
     if (!d.moved) return;
-    const layer = d.layer === 'objects' ? this.doc.objects : this.doc.tokens;
+    const layer = this.layerOf(d.layer);
     const after = layer.get(d.id);
     if (!after) return;
     // O item já está na posição final; o comando guarda o "antes" para desfazer.
-    (layer as typeof this.doc.objects).put(d.id, d.before as MapObject);
-    this.commit(layer as typeof this.doc.objects, d.layer === 'objects' ? 'Mover objeto' : 'Mover token', [[d.id, after as MapObject]]);
+    layer.put(d.id, d.before);
+    const label = d.layer === 'objects' ? 'Mover objeto' : d.layer === 'notes' ? 'Mover nota' : 'Mover token';
+    this.commit(layer, label, [[d.id, after]]);
+  }
+
+  private layerOf(id: SelectableLayer): ItemLayer<MapObject | Token | Note> {
+    return this.doc[id] as ItemLayer<MapObject | Token | Note>;
   }
 
   // ---- paredes e portas
@@ -485,6 +605,12 @@ export class Editor {
     this.commit(this.doc.objects, 'Objeto', [[id, { id, asset: this.state.objectAsset, ...pos, rot: 0, scale: 1 }]]);
   }
 
+  private placeNote(p: Point) {
+    const id = newId('n');
+    this.commit(this.doc.notes, 'Nota', [[id, { id, x: p.x, y: p.y, text: '' }]]);
+    this.set({ selection: { layer: 'notes', id } });
+  }
+
   private placeToken(p: Point) {
     const cell = this.doc.grid.worldToCell(p);
     if (!cell) return;
@@ -507,11 +633,14 @@ export class Editor {
     return cell ? this.doc.grid.cellToWorld(cell) : p;
   }
 
-  private commit<T extends { id: string }>(layer: import('../core/doc/ItemLayer').ItemLayer<T>, label: string, changes: [string, T | null][]) {
+  private commit<T extends { id: string }>(layer: ItemLayer<T>, label: string, changes: [string, T | null][]) {
     const cmd = new ItemsCommand(layer, label);
     for (const [id, item] of changes) cmd.set(id, item);
     layer.emit();
-    this.history.push(cmd);
+    // Mexer em tokens ou paredes (ex.: abrir uma porta) pode revelar mais da névoa.
+    const affectsSight = (layer as unknown) === this.doc.tokens || (layer as unknown) === this.doc.walls;
+    const fog = affectsSight && this.state.autoReveal && !cmd.isEmpty() ? this.visionFogCommand() : null;
+    this.history.push(fog ? new CompositeCommand(label, [cmd, fog]) : cmd);
   }
 
   private refreshOverlay() {
@@ -529,12 +658,12 @@ export class Editor {
       else if (tool === 'wall') wallPreview = { segments: [], snap: snapToVertex(grid, this.hoverPoint) };
       else doorPreview = nearestEdge(grid, this.hoverPoint);
     }
-    this.overlay = { wallPreview, doorPreview, eraseTarget };
+    this.overlay = { wallPreview, doorPreview, eraseTarget, ruler: this.ruler };
     this.overlayListeners.forEach((fn) => fn());
   }
 
   private endGestures() {
-    if (this.stroke || this.wallDrag || this.moveDrag) this.pointerUp();
+    if (this.stroke || this.wallDrag || this.moveDrag || this.rulerDrag) this.pointerUp();
   }
 
   private paintSegment(a: Point, b: Point) {
