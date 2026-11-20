@@ -5,7 +5,7 @@ import { visibleCells } from '../core/doc/vision';
 import type { ItemLayer } from '../core/doc/ItemLayer';
 import { EMPTY, TERRAINS } from '../core/doc/terrain';
 import {
-  hitSegment, nearestEdge, rectangleSegments, samePoint, snapToVertex, subtractCollinear, type WallSegment,
+  DEFAULT_WALL_STYLE, hitSegment, nearestEdge, rectangleSegments, samePoint, snapToVertex, styleField, subtractCollinear, type WallSegment,
 } from '../core/doc/walls';
 import type { Cell, Point } from '../core/grid/GridSystem';
 import { CompositeCommand, History } from '../core/history/History';
@@ -68,6 +68,8 @@ export interface EditorState {
   brushSize: number;
   showGrid: boolean;
   objectAsset: string;
+  /** Tema das próximas paredes desenhadas. */
+  wallStyle: string;
   tokenColor: string;
   fogMode: FogMode;
   /** Revela a névoa pela visão dos personagens de jogador a cada movimento. */
@@ -120,6 +122,7 @@ export class Editor {
       brushSize: 2,
       showGrid: true,
       objectAsset: OBJECT_ASSETS[0].key,
+      wallStyle: DEFAULT_WALL_STYLE,
       tokenColor: TOKEN_COLORS[0],
       fogMode: 'hide',
       autoReveal: true,
@@ -162,6 +165,7 @@ export class Editor {
     this.refreshOverlay();
   }
   setObjectAsset(objectAsset: string) { this.set({ objectAsset, tool: 'object' }); }
+  setWallStyle(wallStyle: string) { this.set({ wallStyle, tool: 'wall' }); }
   setTokenColor(tokenColor: string) {
     this.set({ tokenColor });
     // Só recolore na ferramenta Selecionar; com a ferramenta Token a cor vale para o próximo.
@@ -561,7 +565,7 @@ export class Editor {
     const segs = rect ? rectangleSegments(start, end) : [[start, end] as [typeof start, typeof end]];
     this.commit(this.doc.walls, rect ? 'Sala' : 'Parede', segs.map(([a, b]) => {
       const id = newId('w');
-      return [id, { id, a, b, kind: 'wall' }];
+      return [id, { id, a, b, kind: 'wall', ...styleField(this.state.wallStyle) }];
     }));
   }
 
@@ -576,13 +580,13 @@ export class Editor {
       if (s.kind === 'door') {
         // Clicar numa porta existente a transforma de volta em parede.
         toggledOff = true;
-        changes.push([s.id, { ...s, kind: 'wall' }]);
+        changes.push([s.id, { ...s, kind: 'wall', ...styleField(this.state.wallStyle) }]);
         continue;
       }
       changes.push([s.id, null]);
       for (const [a, b] of parts) {
         const id = newId('w');
-        changes.push([id, { id, a, b, kind: 'wall' }]);
+        changes.push([id, { id, a, b, kind: 'wall', ...styleField(s.style) }]);
       }
     }
     if (!toggledOff) {

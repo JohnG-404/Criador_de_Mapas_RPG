@@ -55,7 +55,9 @@ html, body, #root { margin: 0; height: 100%; }
 .tools button:hover, .terrains button:hover { border-color: #5a6274; }
 .tools button.active, .terrains button.active { border-color: var(--accent); background: #3a3426; }
 .tools button:focus-visible, .terrains button:focus-visible, .panel input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.terrains { display: flex; flex-direction: column; gap: 6px; }
+.terrains { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.terrains button { padding: 4px 6px; gap: 6px; font-size: 12px; line-height: 1.15; min-width: 0; }
+.terrains .swatch { width: 24px; height: 24px; background-size: 48px; }
 .swatch { width: 30px; height: 30px; border-radius: 6px; background-size: 60px; flex: none; box-shadow: inset 0 0 0 1px #0006; }
 .terrains kbd { margin-left: auto; font-size: 11px; color: var(--muted); font-family: inherit; }
 .panel input[type=range] { width: 100%; accent-color: var(--accent); }
@@ -118,7 +120,7 @@ html, body, #root { margin: 0; height: 100%; }
   .workspace { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .panel { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--panel-border); padding: 8px 12px; gap: 14px; }
   .panel section { flex: none; }
-  .terrains, .layers { flex-direction: row; }
+  .terrains, .layers { display: flex; flex-direction: row; }
   .objects { grid-template-columns: repeat(8, auto); }
   .objects button span, .help-list { display: none; }
   .terrains button span:not(.swatch), .terrains kbd, .tools button span, .panel .help { display: none; }

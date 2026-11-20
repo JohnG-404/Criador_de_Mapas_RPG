@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { OBJECT_ASSETS, TOKEN_COLORS } from '../core/doc/objects';
 import { TERRAINS } from '../core/doc/terrain';
 import { LAYERS, MAX_BRUSH, MIN_BRUSH, TOOLS, type Editor, type EditorState, type ToolId } from '../editor/Editor';
-import { OBJECT_TEXTURE_URLS } from '../render/objectTextures';
+import { OBJECT_TEXTURE_URLS, WALL_TEXTURE_URLS } from '../render/objectTextures';
+import { WALL_STYLES } from '../core/doc/walls';
 import { TERRAIN_TEXTURE_URLS } from '../render/terrainTextures';
 
 const TOOL_ICONS: Record<ToolId, string> = {
@@ -69,11 +70,11 @@ export function ToolPanel({ editor, state }: { editor: Editor; state: EditorStat
                 aria-checked={state.terrain === t.id}
                 className={state.terrain === t.id ? 'active' : ''}
                 onClick={() => editor.setTerrain(t.id)}
-                title={`${t.name} (${i + 1})`}
+                title={i < 9 ? `${t.name} (${i + 1})` : t.name}
               >
                 <span className="swatch" style={{ backgroundImage: `url(${TERRAIN_TEXTURE_URLS[t.key]})` }} />
                 <span>{t.name}</span>
-                <kbd>{i + 1}</kbd>
+                {i < 9 && <kbd>{i + 1}</kbd>}
               </button>
             ))}
           </div>
@@ -140,6 +141,22 @@ export function ToolPanel({ editor, state }: { editor: Editor; state: EditorStat
       {(tool === 'wall' || tool === 'door') && (
         <section>
           <h2>{tool === 'wall' ? 'Paredes' : 'Portas'}</h2>
+          {tool === 'wall' && (
+            <div className="terrains" role="radiogroup" aria-label="Tema da parede">
+              {WALL_STYLES.map((w) => (
+                <button
+                  key={w.key}
+                  role="radio"
+                  aria-checked={state.wallStyle === w.key}
+                  className={state.wallStyle === w.key ? 'active' : ''}
+                  onClick={() => editor.setWallStyle(w.key)}
+                >
+                  <span className="swatch" style={{ backgroundImage: `url(${WALL_TEXTURE_URLS[w.key]})` }} />
+                  <span>{w.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
           <ul className="help-list">
             {tool === 'wall' ? (
               <>

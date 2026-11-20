@@ -3,7 +3,7 @@ import { TerrainLayer } from '../core/doc/TerrainLayer';
 import { HexGrid } from '../core/grid/HexGrid';
 import { SquareGrid } from '../core/grid/SquareGrid';
 import { TERRAINS } from '../core/doc/terrain';
-import { boxBlurRGBA, buildChunkMask, cellRangeRect, MASK_LAYERS, MASK_PX_PER_CELL } from './terrainMask';
+import { boxBlurRGBA, buildChunkMask, cellRangeRect, chooseSlots, MASK_LAYERS, MASK_PX_PER_CELL, MASK_SLOTS } from './terrainMask';
 import { terrainFragment } from './terrainShader';
 
 describe('máscara de terreno', () => {
@@ -24,11 +24,12 @@ describe('máscara de terreno', () => {
       const k = (j * m.width + i) * 4;
       return [m.data[k], m.data[k + 1], m.data[k + 2], m.data[k + 3]];
     };
+    expect(m.slots).toEqual([1, 3]); // grama no slot 0 (R), água no slot 1 (G)
     expect(at(5 * 32, 5 * 32)[0]).toBe(255); // grama pura
-    expect(at(20 * 32, 5 * 32)[2]).toBe(255); // água pura
+    expect(at(20 * 32, 5 * 32)[1]).toBe(255); // água pura
     const edge = at(10 * 32, 5 * 32);
     expect(edge[0]).toBeGreaterThan(40);
-    expect(edge[2]).toBeGreaterThan(40);
+    expect(edge[1]).toBeGreaterThan(40);
   });
 
   it('células fora do mapa ficam zeradas', () => {
@@ -50,24 +51,32 @@ describe('máscara de terreno', () => {
     }
   });
 
-  it('terrenos acima do 4º vão para as máscaras seguintes', () => {
-    expect(MASK_LAYERS).toBe(Math.ceil(TERRAINS.length / 4));
+  it('cada chunk usa só os terrenos dele, inclusive ids altos', () => {
     const g = new SquareGrid(8, 8, 32);
     const l = new TerrainLayer(8, 8, TERRAINS.length);
     const m = buildChunkMask(g, l, 0, 0);
     const layerSize = m.width * m.height * 4;
     const mid = Math.floor(m.height / 2) * m.width + Math.floor(m.width / 2);
-    const id = TERRAINS.length;
     expect(m.data.length).toBe(layerSize * MASK_LAYERS);
-    expect(m.data[((id - 1) >> 2) * layerSize + mid * 4 + ((id - 1) & 3)]).toBe(255);
-    expect(m.data[mid * 4]).toBe(0); // nada de grama na primeira máscara
+    expect(m.slots).toEqual([TERRAINS.length]);
+    expect(m.data[mid * 4]).toBe(255); // o último terreno do catálogo ocupa o slot 0
   });
 
-  it('o shader declara uma máscara a cada 4 terrenos e uma textura por terreno', () => {
-    const src = terrainFragment(TERRAINS.length);
+  it('com mais terrenos que slots, ficam os mais comuns', () => {
+    const ids = new Uint8Array(100);
+    for (let i = 0; i < 100; i++) ids[i] = 1 + (i % (MASK_SLOTS + 2));
+    ids[0] = ids[1] = ids[2] = 9; // o 9 fica mais comum
+    const slots = chooseSlots(ids);
+    expect(slots).toHaveLength(MASK_SLOTS);
+    expect(slots).toContain(9);
+    expect([...slots].sort((a, b) => a - b)).toEqual(slots);
+  });
+
+  it('o shader declara uma máscara a cada 4 slots e uma textura por slot', () => {
+    const src = terrainFragment(MASK_SLOTS);
     expect(src).toContain(`uniform sampler2D uMask${MASK_LAYERS};`);
     expect(src).not.toContain(`uMask${MASK_LAYERS + 1}`);
-    expect(src).toContain(`uniform sampler2D uTex${TERRAINS.length};`);
-    expect(src).not.toContain(`uTex${TERRAINS.length + 1};`);
+    expect(src).toContain(`uniform sampler2D uTex${MASK_SLOTS};`);
+    expect(src).not.toContain(`uTex${MASK_SLOTS + 1};`);
   });
 });

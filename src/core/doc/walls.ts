@@ -10,6 +10,34 @@ export interface WallSegment extends Item {
   kind: WallKind;
   /** Só portas: aberta não bloqueia a visão. */
   open?: boolean;
+  /** Só paredes: tema da textura (ver WALL_STYLES). Ausente = DEFAULT_WALL_STYLE. */
+  style?: string;
+}
+
+export interface WallStyle {
+  key: string;
+  name: string;
+}
+
+/** Temas de parede do estilo realista. As texturas ficam em render/objectTextures.ts. */
+export const WALL_STYLES: readonly WallStyle[] = [
+  { key: 'pedra', name: 'Pedra' },
+  { key: 'pedra-antiga', name: 'Pedra antiga' },
+  { key: 'pedra-musgo', name: 'Pedra com musgo' },
+  { key: 'tijolo', name: 'Tijolo' },
+  { key: 'madeira', name: 'Madeira' },
+  { key: 'caverna', name: 'Rocha de caverna' },
+];
+
+export const DEFAULT_WALL_STYLE = 'pedra';
+
+export function wallStyleOf(s: WallSegment): string {
+  return s.style && WALL_STYLES.some((w) => w.key === s.style) ? s.style : DEFAULT_WALL_STYLE;
+}
+
+/** Campo `style` para gravar numa parede (omitido no tema padrão, para arquivos antigos continuarem iguais). */
+export function styleField(style: string | undefined): { style?: string } {
+  return style && style !== DEFAULT_WALL_STYLE && WALL_STYLES.some((w) => w.key === style) ? { style } : {};
 }
 
 /** A parede (ou porta fechada) bloqueia a visão? */

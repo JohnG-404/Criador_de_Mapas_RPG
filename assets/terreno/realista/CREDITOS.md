@@ -17,3 +17,12 @@ Todas continuam emendando sem costura.
 | calcamento.webp | cobblestone_floor_01 |
 | calcamento-musgo.webp | mossy_cobblestone |
 | piso-madeira.webp | old_wood_floor |
+| chao-caverna.webp | dark_rock_02 |
+| rocha-lisa.webp | ground_grey |
+| pedras-soltas.webp | gray_rocks |
+| seixos.webp | large_pebbles |
+| rocha-musgo.webp | mossy_rock |
+| folhas-secas.webp | forest_leaves_02 |
+| terra-rachada.webp | mud_cracked_dry_03 |
+| terra-queimada.webp | burned_ground_01 |
+| trilha.webp | grass_path_2 |

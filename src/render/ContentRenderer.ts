@@ -1,8 +1,8 @@
 import { Assets, Container, FillPattern, Graphics, Matrix, Sprite, Text, type Texture } from 'pixi.js';
 import type { MapDocument } from '../core/doc/MapDocument';
 import { objectAsset, type MapObject, type Token } from '../core/doc/objects';
-import type { WallSegment } from '../core/doc/walls';
-import { FLAT_OBJECTS, OBJECT_TEXTURE_URLS, WALL_TEXTURE_URL } from './objectTextures';
+import { wallStyleOf, type WallSegment } from '../core/doc/walls';
+import { FLAT_OBJECTS, OBJECT_TEXTURE_URLS, WALL_TEXTURE_URLS } from './objectTextures';
 
 const SHADOW = { x: 3, y: 4, alpha: 0.38 };
 
@@ -19,7 +19,7 @@ export class ContentRenderer {
   private noteViews = new Map<string, { root: Container; key: string }>();
   private wallGfx = new Graphics();
   private objectTextures = new Map<string, Texture>();
-  private wallPattern: FillPattern | null = null;
+  private wallPatterns = new Map<string, FillPattern>();
   private objectSprites = new Map<string, { sprite: Sprite; shadow: Sprite | null; key: string }>();
   private tokenViews = new Map<string, { root: Container; key: string }>();
   private unsub: Array<() => void> = [];
@@ -39,10 +39,15 @@ export class ContentRenderer {
         this.objectTextures.set(key, tex);
       }),
     );
-    const wallTex = await Assets.load<Texture>(WALL_TEXTURE_URL);
-    this.wallPattern = new FillPattern(wallTex, 'repeat');
-    const s = (this.doc.grid.cellSize * 2) / wallTex.width;
-    this.wallPattern.setTransform(new Matrix().scale(s, s));
+    await Promise.all(
+      Object.entries(WALL_TEXTURE_URLS).map(async ([key, url]) => {
+        const wallTex = await Assets.load<Texture>(url);
+        const pattern = new FillPattern(wallTex, 'repeat');
+        const s = (this.doc.grid.cellSize * 2) / wallTex.width;
+        pattern.setTransform(new Matrix().scale(s, s));
+        this.wallPatterns.set(key, pattern);
+      }),
+    );
   }
 
   start() {
@@ -115,16 +120,25 @@ export class ContentRenderer {
     const all = this.doc.walls.all();
     const walls = all.filter((s) => s.kind === 'wall');
     const doors = all.filter((s) => s.kind === 'door');
-    const path = (dx: number, dy: number) => { for (const s of walls) g.moveTo(s.a.x + dx, s.a.y + dy).lineTo(s.b.x + dx, s.b.y + dy); };
+    const path = (segs: WallSegment[], dx: number, dy: number) => { for (const s of segs) g.moveTo(s.a.x + dx, s.a.y + dy).lineTo(s.b.x + dx, s.b.y + dy); };
     if (walls.length) {
-      path(SHADOW.x, SHADOW.y);
+      path(walls, SHADOW.x, SHADOW.y);
       g.stroke({ width: w + 3, color: 0x000000, alpha: SHADOW.alpha, cap: 'round', join: 'round' });
-      path(0, 0);
+      path(walls, 0, 0);
       g.stroke({ width: w + 3, color: 0x221d18, cap: 'round', join: 'round' });
-      path(0, 0);
-      if (this.wallPattern) g.stroke({ width: w, fill: this.wallPattern, cap: 'round', join: 'round' });
-      else g.stroke({ width: w, color: 0x6d6a63, cap: 'round', join: 'round' });
-      path(0, 0);
+      // Um traço por tema, cada um com a sua textura.
+      const byStyle = new Map<string, WallSegment[]>();
+      for (const s of walls) {
+        const k = wallStyleOf(s);
+        byStyle.set(k, [...(byStyle.get(k) ?? []), s]);
+      }
+      for (const [style, segs] of byStyle) {
+        path(segs, 0, 0);
+        const pattern = this.wallPatterns.get(style);
+        if (pattern) g.stroke({ width: w, fill: pattern, cap: 'round', join: 'round' });
+        else g.stroke({ width: w, color: 0x6d6a63, cap: 'round', join: 'round' });
+      }
+      path(walls, 0, 0);
       g.stroke({ width: w, color: 0x000000, alpha: 0.12, cap: 'round', join: 'round' });
     }
     for (const d of doors) this.drawDoor(g, d, cell);

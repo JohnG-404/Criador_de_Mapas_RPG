@@ -1,7 +1,7 @@
 import { MapDocument, type NewMapOptions } from './MapDocument';
 import type { MapObject, Note, Token } from './objects';
 import { DEFAULT_VISION, OBJECT_ASSETS } from './objects';
-import type { WallSegment } from './walls';
+import { styleField, type WallSegment } from './walls';
 
 /** Formato do arquivo .rpgmap (JSON). */
 export interface MapFile {
@@ -71,7 +71,7 @@ export function parseMap(text: string | MapFile): MapDocument {
   for (const w of arr(f.walls)) {
     if (isPoint(w?.a) && isPoint(w?.b) && typeof w.id === 'string') {
       const kind = w.kind === 'door' ? 'door' : 'wall';
-      doc.walls.put(w.id, { id: w.id, a: w.a, b: w.b, kind, ...(kind === 'door' && w.open ? { open: true } : {}) });
+      doc.walls.put(w.id, { id: w.id, a: w.a, b: w.b, kind, ...(kind === 'door' && w.open ? { open: true } : {}), ...(kind === 'wall' ? styleField(w.style) : {}) });
     }
   }
   const assets = new Set(OBJECT_ASSETS.map((a) => a.key));

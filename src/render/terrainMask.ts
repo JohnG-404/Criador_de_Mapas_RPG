@@ -9,14 +9,20 @@ export const MASK_MARGIN_CELLS = 2;
 /** Raio do desfoque em pixels da máscara (largura da transição entre terrenos). */
 export const MASK_BLUR = 2;
 
-/** Quantas máscaras RGBA são usadas (4 terrenos por máscara). */
-export const MASK_LAYERS = Math.ceil(TERRAINS.length / 4);
-/** Limite do shader: 3 máscaras + 12 texturas = 15 unidades de textura (o WebGL 2 garante 16). */
-export const MAX_TERRAINS = 12;
+/**
+ * Quantos terrenos diferentes cada chunk mistura. O catálogo pode ter mais:
+ * cada chunk escolhe os seus (ver `slots`). 3 máscaras + 12 texturas = 15
+ * unidades de textura, dentro das 16 que o WebGL 2 garante.
+ */
+export const MASK_SLOTS = 12;
+/** Máscaras RGBA por chunk (4 slots em cada). */
+export const MASK_LAYERS = MASK_SLOTS / 4;
 
 export interface ChunkMask {
   /** MASK_LAYERS máscaras RGBA em sequência, cada uma com width × height × 4 bytes. */
   data: Uint8Array;
+  /** Id do terreno de cada slot (canal) da máscara, em ordem crescente; no máximo MASK_SLOTS. */
+  slots: number[];
   width: number;
   height: number;
   /** Área do mundo coberta pelas células do chunk (onde o quad é desenhado). */
@@ -25,10 +31,7 @@ export interface ChunkMask {
   maskRect: Rect;
 }
 
-if (TERRAINS.length > MAX_TERRAINS) throw new Error(`O shader de terreno suporta até ${MAX_TERRAINS} terrenos.`);
-
-/** Posição do byte do terreno `id` (1..N) no pixel `p` da máscara. */
-const slot = (id: number, p: number, layerSize: number) => ((id - 1) >> 2) * layerSize + p * 4 + ((id - 1) & 3);
+if (TERRAINS.length > 255) throw new Error('O terreno é salvo em 1 byte: no máximo 255 tipos.');
 
 /** Retângulo do mundo que envolve um intervalo de células. */
 export function cellRangeRect(grid: GridSystem, minCol: number, maxCol: number, minRow: number, maxRow: number): Rect {
@@ -49,9 +52,10 @@ export function cellRangeRect(grid: GridSystem, minCol: number, maxCol: number, 
 }
 
 /**
- * Máscaras RGBA de um chunk: cada canal é a presença de um terreno (máscara 1:
- * R = id 1, G = id 2, B = id 3, A = id 4; máscara 2: ids 5 a 8; e assim por
- * diante), amostrada em resolução baixa e desfocada.
+ * Máscaras RGBA de um chunk: cada canal é a presença de um terreno (slot 0 =
+ * R da máscara 1, slot 4 = R da máscara 2...), amostrada em resolução baixa e
+ * desfocada. Os slots são os terrenos que aparecem no chunk (com a margem):
+ * se houver mais de MASK_SLOTS, os mais raros viram o mais comum.
  * A GPU interpola e o shader mistura as texturas com esses pesos, o que dá a
  * transição suave entre terrenos nos dois tipos de grid.
  */
@@ -65,9 +69,9 @@ export function buildChunkMask(grid: GridSystem, layer: TerrainLayer, cx: number
   const maskRect = { x: quad.x - margin, y: quad.y - margin, width: width * px, height: height * px };
   const layerSize = width * height * 4;
   const size = layerSize * MASK_LAYERS;
-  const nT = TERRAINS.length;
   const data = out && out.length === size ? out : new Uint8Array(size);
   data.fill(0);
+  const ids = new Uint8Array(width * height);
 
   if (grid.kind === 'square') {
     // Caminho rápido: no grid quadrado a célula sai direto da divisão.
@@ -79,7 +83,7 @@ export function buildChunkMask(grid: GridSystem, layer: TerrainLayer, cx: number
         const col = Math.floor((maskRect.x + (i + 0.5) * px) / s);
         if (col < 0 || col >= grid.cols) continue;
         const id = layer.get(col, row);
-        if (id >= 1 && id <= nT) data[slot(id, j * width + i, layerSize)] = 255;
+        ids[j * width + i] = id;
       }
     }
   } else {
@@ -89,16 +93,49 @@ export function buildChunkMask(grid: GridSystem, layer: TerrainLayer, cx: number
         const cell = grid.worldToCell({ x: maskRect.x + (i + 0.5) * px, y });
         if (!cell) continue;
         const id = layer.get(cell.col, cell.row);
-        if (id >= 1 && id <= nT) data[slot(id, j * width + i, layerSize)] = 255;
+        ids[j * width + i] = id;
       }
     }
+  }
+  const slots = chooseSlots(ids);
+  const lut = new Int16Array(256).fill(-1);
+  slots.forEach((id, k) => { lut[id] = k; });
+  const fallback = slots.length ? lut[mostCommon(ids)] : -1;
+  for (let p = 0; p < ids.length; p++) {
+    const id = ids[p];
+    if (!id) continue;
+    const k = lut[id] >= 0 ? lut[id] : fallback;
+    if (k >= 0) data[(k >> 2) * layerSize + p * 4 + (k & 3)] = 255;
   }
   for (let l = 0; l < MASK_LAYERS; l++) {
     const layer = data.subarray(l * layerSize, (l + 1) * layerSize);
     boxBlurRGBA(layer, width, height, MASK_BLUR);
     boxBlurRGBA(layer, width, height, MASK_BLUR);
   }
-  return { data, width, height, quad, maskRect };
+  return { data, width, height, quad, maskRect, slots };
+}
+
+function counts(ids: Uint8Array) {
+  const c = new Uint32Array(256);
+  for (let p = 0; p < ids.length; p++) c[ids[p]]++;
+  c[0] = 0;
+  return c;
+}
+
+function mostCommon(ids: Uint8Array) {
+  const c = counts(ids);
+  let best = 0;
+  for (let id = 1; id < 256; id++) if (c[id] > c[best]) best = id;
+  return best;
+}
+
+/** Terrenos presentes, os MASK_SLOTS mais comuns, em ordem de id (estável enquanto o conjunto não muda). */
+export function chooseSlots(ids: Uint8Array): number[] {
+  const c = counts(ids);
+  const present: number[] = [];
+  for (let id = 1; id < 256; id++) if (c[id]) present.push(id);
+  if (present.length > MASK_SLOTS) present.sort((a, b) => c[b] - c[a] || a - b).length = MASK_SLOTS;
+  return present.sort((a, b) => a - b);
 }
 
 /** Desfoque de caixa separável nos 4 canais (no lugar), com bordas repetidas. */
