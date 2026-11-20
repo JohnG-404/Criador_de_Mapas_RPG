@@ -12,7 +12,9 @@ import type { GeneratorKind } from '../core/procgen';
 import { ExportDialog } from './ExportDialog';
 import { OnlineDialog } from './OnlineDialog';
 import { CloudDialog } from './CloudDialog';
-import { cloudRefFromUrl, loadFromCloud, setCurrentCloudMap } from '../online/cloud';
+import { AccountDialog } from './AccountDialog';
+import { CLOUD_QUERY, CloudError, cloudRefFromUrl, loadFromCloud, setCurrentCloudMap } from '../online/cloud';
+import { authErrorFromUrl, authStore, shouldStartAuth, startAuth } from '../online/auth';
 import { newRoomCode } from '../online/protocol';
 import type { HostedRoom } from '../online/room';
 import { GenerateDialog } from './GenerateDialog';
@@ -52,6 +54,11 @@ export function App() {
   const [a11yOpen, setA11yOpen] = useState(false);
   const closeA11y = useCallback(() => setA11yOpen(false), []);
   const closeCloud = useCallback(() => setCloudOpen(false), []);
+  const auth = useSyncExternalStore(authStore.subscribe, authStore.get);
+  const [accountOpen, setAccountOpen] = useState<{ reason?: string; returnSearch?: string } | null>(null);
+  const closeAccount = useCallback(() => setAccountOpen(null), []);
+  /** Mapa do link que espera o login para abrir. */
+  const pendingMapRef = useRef<string | null>(null);
   const [room, setRoom] = useState<{ code: string; peers: number; status: 'connecting' | 'online' | 'error' } | null>(null);
   const roomRef = useRef<HostedRoom | null>(null);
   const closeOnline = useCallback(() => setOnlineOpen(false), []);
@@ -76,7 +83,7 @@ export function App() {
   useEffect(() => () => roomRef.current?.stop(), []);
   const close3d = useCallback(() => setShow3d(false), []);
   const [lastGen, setLastGen] = useState<{ kind: GeneratorKind; seed: string } | null>(null);
-  const dialogOpen = newMapOpen || genOpen || exportOpen || onlineOpen || cloudOpen || a11yOpen;
+  const dialogOpen = newMapOpen || genOpen || exportOpen || onlineOpen || cloudOpen || a11yOpen || !!accountOpen;
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const broadcastRef = useRef<ReturnType<typeof startPlayerBroadcast> | null>(null);
@@ -111,16 +118,42 @@ export function App() {
 
   const open = useCallback(() => fileRef.current?.click(), []);
 
-  // Link de mapa na nuvem (?mapa=id#chave): abre o mapa e limpa o endereço.
+  // Link de mapa na nuvem (?mapa=id#chave ou ?mapa=id): abre o mapa e limpa o endereço.
+  // Ao voltar de um link de e-mail, primeiro lê a sessão da conta do endereço.
   useEffect(() => {
     const ref = cloudRefFromUrl();
-    if (!ref) return;
-    history.replaceState(null, '', location.pathname);
-    loadFromCloud(ref.id, ref.token)
-      .then((c) => { editor.loadCampaign(c); notify(`Aberto da nuvem: ${editor.doc.options.name}`); })
-      .catch((e: Error) => notify(e.message || 'Não foi possível abrir o mapa da nuvem.', true));
+    const authError = authErrorFromUrl();
+    const needAuth = shouldStartAuth() || (ref !== null && !ref.token);
+    if (!ref && !needAuth) return;
+    let cancelled = false;
+    void (async () => {
+      if (needAuth) await startAuth();
+      if (cancelled) return;
+      if (authError) notify(authError, true);
+      if (!ref) return;
+      history.replaceState(null, '', location.pathname);
+      try {
+        editor.loadCampaign(await loadFromCloud(ref.id, ref.token));
+        notify(`Aberto da nuvem: ${editor.doc.options.name}`);
+      } catch (e) {
+        if (e instanceof CloudError && e.needsLogin) {
+          pendingMapRef.current = ref.id;
+          setAccountOpen({ reason: 'Entre na sua conta para abrir o mapa deste link.', returnSearch: `?${CLOUD_QUERY}=${ref.id}` });
+        } else notify((e as Error).message || 'Não foi possível abrir o mapa da nuvem.', true);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [editor, notify]);
 
+  // Depois de entrar, abre o mapa do link que estava esperando.
+  useEffect(() => {
+    const id = pendingMapRef.current;
+    if (!auth.account || !id) return;
+    pendingMapRef.current = null;
+    loadFromCloud(id, null)
+      .then((c) => { editor.loadCampaign(c); notify(`Aberto da nuvem: ${editor.doc.options.name}`); })
+      .catch((e: Error) => notify(e.message || 'Não foi possível abrir o mapa da nuvem.', true));
+  }, [auth.account, editor, notify]);
 
   // App de desktop: mapa aberto com duplo clique num arquivo .rpgmap.
   useEffect(() => {
@@ -190,7 +223,7 @@ export function App() {
           <button onClick={() => setGenOpen(true)} title="Gerar masmorra, caverna ou região a partir de uma semente"><UiIcon name="dice" />Gerar</button>
           <button onClick={open} title="Abrir arquivo .rpgmap (Ctrl+O)"><UiIcon name="chest" />Abrir</button>
           <button onClick={() => void save()} title="Salvar arquivo .rpgmap (Ctrl+S)"><UiIcon name="quill" />Salvar</button>
-          <button onClick={() => setCloudOpen(true)} title="Salvar e abrir mapas na nuvem, para continuar em outro computador"><UiIcon name="cloud" />Nuvem</button>
+          <button onClick={() => { void startAuth(); setCloudOpen(true); }} title="Salvar e abrir mapas na nuvem, para continuar em outro computador"><UiIcon name="cloud" />Nuvem</button>
           <button onClick={() => setExportOpen(true)} title="Imagem PNG, arquivo para mesa virtual ou PDF para imprimir"><UiIcon name="export" />Exportar</button>
           <input
             ref={fileRef}
@@ -261,6 +294,15 @@ export function App() {
             title="Ver o mapa em 3D (paredes com altura, objetos em volume e miniaturas)"
           >
             <UiIcon name="cube" />Ver em 3D
+          </button>
+          <span className="sep" />
+          <button
+            onClick={() => setAccountOpen({})}
+            className="account-btn"
+            data-testid="account-button"
+            title={auth.account ? `Conta: ${auth.account.email}` : 'Entrar ou criar conta (opcional)'}
+          >
+            <UiIcon name="user" />{auth.account ? auth.account.email.split('@')[0] : 'Entrar'}
           </button>
           <label className="toggle">
             <input type="checkbox" checked={state.showGrid} onChange={(e) => editor.setShowGrid(e.target.checked)} />
@@ -334,7 +376,16 @@ export function App() {
           campaign={() => editor.campaign()}
           notify={notify}
           onClose={closeCloud}
+          onLogin={() => { setCloudOpen(false); setAccountOpen({}); }}
           onOpened={(c, name) => { editor.loadCampaign(c); setCloudOpen(false); notify(`Aberto da nuvem: ${name}`); }}
+        />
+      )}
+      {accountOpen && (
+        <AccountDialog
+          notify={notify}
+          onClose={closeAccount}
+          reason={accountOpen.reason}
+          returnSearch={accountOpen.returnSearch}
         />
       )}
       {onlineOpen && (

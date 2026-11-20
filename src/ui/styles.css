@@ -401,3 +401,18 @@ span.ini-value { font-weight: 700; text-align: center; font-size: 16px; grid-col
   .sheet-body { grid-template-columns: 1fr; }
   .res-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* Conta e compartilhamento na nuvem */
+.dialog .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.dialog .field-label { color: var(--muted); font-size: 13px; }
+.dialog .link-row { display: flex; gap: 6px; align-items: center; }
+.dialog .link-row .text-input { margin: 0; flex: 1; min-width: 0; }
+.dialog .callout { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border: 1px solid var(--panel-border); border-radius: var(--radius, 8px); padding: 10px 12px; background: var(--panel-2); }
+.dialog .badge { font-size: 11px; color: var(--muted); border: 1px solid var(--panel-border); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+.dialog .actions .link-btn, .dialog .link-btn { background: none; border: 0; box-shadow: none; padding: 0; color: var(--accent-strong, var(--accent)); text-decoration: underline; cursor: pointer; margin-right: auto; font-size: 12px; }
+.dialog .align-start { align-self: flex-start; }
+.account-btn { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 520px) {
+  .dialog .link-row { flex-wrap: wrap; }
+  .cloud-list li { flex-wrap: wrap; }
+}

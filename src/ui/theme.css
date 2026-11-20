@@ -453,3 +453,28 @@ kbd, .help-list kbd, .panel .help kbd {
 [data-contrast='alto'] .dock-tabs button.active { color: #ffd400; border-bottom-color: #ffd400; }
 [data-contrast='alto'] :is(.roll, .ini-row, .attr, .save, .attack) { background: #000; border-color: #fff; }
 [data-contrast='alto'] :is(.dock-body, .sheet-dialog) :is(input, select, textarea) { background: #000; color: #fff; border: 2px solid #fff; }
+
+/* ---------- conta e nuvem (login, Meus mapas, convites) */
+.dialog :is(.link-row, .callout, .cloud-list) button {
+  font: inherit; font-size: 13px; padding: 5px 10px; cursor: pointer;
+  color: var(--btn-text);
+  background: linear-gradient(180deg, var(--btn-top), var(--btn-bot));
+  border: 1px solid var(--btn-border);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 rgba(255, 226, 170, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.45);
+  transition: border-color var(--speed), background var(--speed), color var(--speed);
+}
+.dialog :is(.link-row, .callout, .cloud-list) button:hover:not(:disabled) { border-color: var(--btn-hover); color: #fff6e0; }
+.dialog :is(.link-row, .callout, .cloud-list) button:disabled { opacity: 0.45; }
+.dialog .cloud-list button.danger-text { color: var(--danger); }
+.dialog .cloud-list li { padding: 4px 6px; border: 1px solid rgba(95, 75, 52, 0.55); border-radius: var(--radius); background: rgba(0, 0, 0, 0.22); }
+.dialog .badge { color: var(--accent-strong); border-color: var(--gold-line); }
+.dialog .callout { border-color: var(--gold-line); }
+.dialog .actions .link-btn:hover:not(:disabled) { background: none; color: var(--text); }
+.account-btn .ui-icon { color: var(--accent-strong); }
+
+[data-contrast='alto'] .dialog :is(.link-row, .callout, .cloud-list) button { background: #000; border: 2px solid #fff; box-shadow: none; color: #fff; }
+[data-contrast='alto'] .dialog :is(.link-row, .callout, .cloud-list) button:hover:not(:disabled) { border-color: #ffd400; color: #ffd400; }
+[data-contrast='alto'] .dialog .cloud-list li, [data-contrast='alto'] .dialog .callout { background: #000; border: 1px solid #fff; }
+[data-contrast='alto'] .dialog .badge { color: #000; background: #fff; border-color: #fff; }
+[data-contrast='alto'] .dialog .link-btn { color: #ffd400; }
