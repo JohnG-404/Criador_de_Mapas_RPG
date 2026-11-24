@@ -154,6 +154,11 @@ export function AccessibilityDialog({ onClose }: { onClose: () => void }) {
             <span className="switch-track" aria-hidden="true" />
             <span>Destacar o foco do teclado</span>
           </label>
+          <label className="switch">
+            <input type="checkbox" checked={s.dimOutsideSelection} onChange={(e) => setA11y({ dimOutsideSelection: e.target.checked })} />
+            <span className="switch-track" aria-hidden="true" />
+            <span>Escurecer o resto do mapa na seleção em área</span>
+          </label>
         </section>
 
         <section className="a11y-section" aria-labelledby="a11y-keys">

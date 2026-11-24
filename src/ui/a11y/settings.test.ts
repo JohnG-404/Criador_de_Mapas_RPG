@@ -14,6 +14,8 @@ describe('configurações de acessibilidade', () => {
     expect(s.colorVision).toBe('tritanopia');
     expect(s.uiScale).toBe(1.5);
     expect(s.letterShortcuts).toBe(false);
+    expect(s.dimOutsideSelection).toBe(true);
+    expect(sanitizeA11y({ dimOutsideSelection: false }).dimOutsideSelection).toBe(false);
     expect(sanitizeA11y({ uiScale: 0.1 }).uiScale).toBe(0.85);
   });
 });

@@ -1,10 +1,10 @@
 import { Application, Container, Graphics, Rectangle, Text } from 'pixi.js';
-import { getA11y } from '../ui/a11y/settings';
+import { getA11y, subscribeA11y } from '../ui/a11y/settings';
 import { Camera } from '../core/camera/Camera';
 import type { MapDocument } from '../core/doc/MapDocument';
 import { objectAsset } from '../core/doc/objects';
 import { sameCell, type Cell, type CellRange, type Point } from '../core/grid/GridSystem';
-import type { Editor, LayerId, LayerState } from '../editor/Editor';
+import type { AreaSelection, Editor, LayerId, LayerState } from '../editor/Editor';
 import { ContentRenderer } from './ContentRenderer';
 import { FogRenderer } from './FogRenderer';
 import { ElevationRenderer } from './ElevationRenderer';
@@ -58,6 +58,11 @@ export class MapView {
     style: { fontFamily: 'system-ui, sans-serif', fontWeight: '700', fontSize: 14, fill: 0x1b1e26 },
   });
   private rulerBg = new Graphics();
+  private areaLabel = new Text({
+    text: '',
+    resolution: 3,
+    style: { fontFamily: 'system-ui, sans-serif', fontWeight: '700', fontSize: 13, fill: 0x0b1620 },
+  });
   private fittedSize = '';
   private overlayLayer = new Graphics();
   private layers: Record<LayerId, LayerState> | null = null;
@@ -108,7 +113,8 @@ export class MapView {
     canvas.setAttribute('aria-label', 'Área do mapa');
     canvas.dataset.testid = 'map-canvas';
 
-    this.world.addChild(this.mapLayer, this.terrainHolder, this.elevationHolder, this.gridLayer, this.contentHolder, this.fogHolder, this.notesHolder, this.hoverLayer, this.overlayLayer, this.rulerBg, this.rulerLabel);
+    this.world.addChild(this.mapLayer, this.terrainHolder, this.elevationHolder, this.gridLayer, this.contentHolder, this.fogHolder, this.notesHolder, this.hoverLayer, this.overlayLayer, this.areaLabel, this.rulerBg, this.rulerLabel);
+    this.areaLabel.visible = false;
     this.rulerLabel.anchor.set(0.5);
     this.rulerLabel.visible = false;
     this.notesHolder.visible = this.mode === 'gm';
@@ -120,6 +126,7 @@ export class MapView {
     this.cleanup.push(this.editor.subscribe(() => this.onEditorState()));
     this.cleanup.push(this.editor.history.onChange(() => this.invalidate()));
     this.cleanup.push(this.editor.onOverlay(() => this.invalidate()));
+    this.cleanup.push(subscribeA11y(() => this.invalidate()));
 
     await this.loadDocument();
     this.app.stop();
@@ -495,8 +502,12 @@ export class MapView {
     const g = this.overlayLayer.clear();
     const z = this.camera.zoom;
     const cell = this.doc.grid.cellSize;
-    const { wallPreview, doorPreview, eraseTarget, ruler } = this.editor.overlay;
+    const { wallPreview, doorPreview, eraseTarget, ruler, marquee } = this.editor.overlay;
     this.drawRuler(ruler, z);
+    const area = this.editor.getState().tool === 'select' ? this.editor.getState().area : null;
+    this.areaLabel.visible = false;
+    if (marquee) this.drawArea(g, marquee, z, true);
+    else if (area) this.drawArea(g, area, z, false);
     if (wallPreview) {
       for (const [a, b] of wallPreview.segments) g.moveTo(a.x, a.y).lineTo(b.x, b.y);
       if (wallPreview.segments.length) {
@@ -536,6 +547,120 @@ export class MapView {
     if (tok && this.layers?.tokens.visible) {
       g.circle(tok.x, tok.y, (tok.size * cell) / 2 * 0.9 + pad).stroke({ width: 2 / z, color: theme.selection, alpha: 1 });
     }
+  }
+
+  /**
+   * Seleção em área: escurece o resto do mapa, pinta as células e contorna
+   * cada item pego com a cor do seu tipo, mais uma etiqueta com a contagem.
+   */
+  private drawArea(g: Graphics, area: AreaSelection, z: number, dragging: boolean) {
+    const grid = this.doc.grid;
+    const cell = grid.cellSize;
+    const { rect } = area;
+    const filter = this.editor.getState().areaFilter;
+    const cells = this.editor.activeCells(area);
+    // 1. Fora da seleção fica mais escuro.
+    const b = grid.worldBounds();
+    const pad = cell * 4;
+    if (getA11y().dimOutsideSelection) {
+    const x0 = b.x - pad, y0 = b.y - pad, x1 = b.x + b.width + pad, y1 = b.y + b.height + pad;
+    const rx1 = rect.x + rect.width, ry1 = rect.y + rect.height;
+    g.rect(x0, y0, x1 - x0, rect.y - y0).rect(x0, ry1, x1 - x0, y1 - ry1)
+      .rect(x0, rect.y, rect.x - x0, rect.height).rect(rx1, rect.y, x1 - rx1, rect.height)
+      .fill({ color: 0x000000, alpha: dragging ? 0.3 : 0.5 });
+    }
+    // 2. Células pegas: preenchimento leve e contorno fino.
+    if (cells.length && cells.length <= 8000) {
+      for (const c of cells) g.poly(grid.cellPolygon(c).flatMap((p) => [p.x, p.y]));
+      g.fill({ color: AREA_COLORS.terrain, alpha: 0.2 });
+      if (cells.length <= 3000) {
+        for (const c of cells) g.poly(grid.cellPolygon(c).flatMap((p) => [p.x, p.y]));
+        g.stroke({ color: AREA_COLORS.terrain, width: 1 / z, alpha: 0.55 });
+      }
+    } else if (cells.length) {
+      g.rect(rect.x, rect.y, rect.width, rect.height).fill({ color: AREA_COLORS.terrain, alpha: 0.2 });
+    }
+    // 3. Borda da caixa: traço escuro por baixo e tracejado claro por cima.
+    g.rect(rect.x, rect.y, rect.width, rect.height).stroke({ width: 4 / z, color: 0x000000, alpha: 0.55 });
+    dashedRect(g, rect, 8 / z, 5 / z);
+    g.stroke({ width: 2 / z, color: AREA_COLORS.terrain, alpha: 1 });
+    // 4. Itens: halo e anel na cor do tipo, com um selo de "pego".
+    const ring = (kind: keyof typeof AREA_COLORS, draw: () => void, badge: Point) => {
+      draw(); g.stroke({ width: 7 / z, color: kind === 'terrain' ? 0 : AREA_COLORS[kind], alpha: 0.35 });
+      draw(); g.stroke({ width: 2.5 / z, color: AREA_COLORS[kind], alpha: 1 });
+      const r = 7 / z;
+      g.circle(badge.x, badge.y, r).fill(AREA_COLORS[kind]).stroke({ width: 1.5 / z, color: 0x000000, alpha: 0.7 });
+      g.moveTo(badge.x - r * 0.45, badge.y + r * 0.02).lineTo(badge.x - r * 0.1, badge.y + r * 0.4).lineTo(badge.x + r * 0.5, badge.y - r * 0.38)
+        .stroke({ width: 2 / z, color: 0x0b1620, alpha: 1, cap: 'round', join: 'round' });
+    };
+    const gap = 4 / z;
+    const counts = { objects: 0, tokens: 0, notes: 0, links: 0 };
+    if (filter.objects && this.layers?.objects.visible) {
+      for (const id of area.objects) {
+        const o = this.doc.objects.get(id);
+        const a = o && objectAsset(o.asset);
+        if (!o || !a) continue;
+        counts.objects++;
+        const hw = (a.w * cell * o.scale) / 2 + gap, hh = (a.h * cell * o.scale) / 2 + gap;
+        const r = (o.rot * Math.PI) / 180, cos = Math.cos(r), sin = Math.sin(r);
+        const pts = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y]) => ({ x: o.x + x * cos - y * sin, y: o.y + x * sin + y * cos }));
+        ring('objects', () => g.poly(pts.flatMap((p) => [p.x, p.y])), pts[1]);
+      }
+    }
+    if (filter.tokens && this.layers?.tokens.visible) {
+      for (const id of area.tokens) {
+        const t = this.doc.tokens.get(id);
+        if (!t) continue;
+        counts.tokens++;
+        const rr = (t.size * cell) / 2 * 0.9 + gap;
+        ring('tokens', () => g.circle(t.x, t.y, rr), { x: t.x + rr * 0.72, y: t.y - rr * 0.72 });
+      }
+    }
+    if (filter.notes && this.layers?.notes.visible && this.mode === 'gm') {
+      for (const id of area.notes) {
+        const n = this.doc.notes.get(id);
+        if (!n) continue;
+        counts.notes++;
+        const h = cell * 0.31 + gap;
+        ring('notes', () => g.rect(n.x - h, n.y - h, h * 2, h * 2), { x: n.x + h, y: n.y - h });
+      }
+    }
+    if (filter.links && this.layers?.links.visible) {
+      for (const id of area.links) {
+        const l = this.doc.links.get(id);
+        if (!l) continue;
+        counts.links++;
+        const rr = cell * 0.45 + gap;
+        ring('links', () => g.circle(l.x, l.y, rr), { x: l.x + rr * 0.72, y: l.y - rr * 0.72 });
+      }
+    }
+    // Itens que já estavam onde a área foi solta: tracejado branco e selo "!".
+    for (const c of area.covered ?? []) {
+      const it = this.doc[c.layer].get(c.id);
+      if (!it || !this.layers?.[c.layer].visible) continue;
+      const rr = c.layer === 'tokens' ? ((it as { size: number }).size * cell) / 2 * 0.9 + gap : cell * 0.5 + gap;
+      dashedCircle(g, it.x, it.y, rr, 6 / z, 4 / z);
+      g.stroke({ width: 2.5 / z, color: 0xffffff, alpha: 0.95 });
+      const bx = it.x + rr * 0.72, by = it.y - rr * 0.72, r = 7 / z;
+      g.circle(bx, by, r).fill(0xffffff).stroke({ width: 1.5 / z, color: 0x000000, alpha: 0.7 });
+      g.moveTo(bx, by - r * 0.5).lineTo(bx, by + r * 0.1).stroke({ width: 2 / z, color: 0x0b1620, cap: 'round' });
+      g.circle(bx, by + r * 0.45, 1.1 / z).fill(0x0b1620);
+    }
+    // 5. Etiqueta acima do canto superior esquerdo.
+    const parts: string[] = [];
+    if (cells.length) parts.push(plural(cells.length, 'célula', 'células'));
+    if (counts.objects) parts.push(plural(counts.objects, 'objeto', 'objetos'));
+    if (counts.tokens) parts.push(plural(counts.tokens, 'token', 'tokens'));
+    if (counts.notes) parts.push(plural(counts.notes, 'nota', 'notas'));
+    if (counts.links) parts.push(plural(counts.links, 'passagem', 'passagens'));
+    const label = this.areaLabel;
+    label.text = parts.length ? parts.join(' · ') : 'Nada selecionado';
+    label.visible = true;
+    label.scale.set(1 / z);
+    label.anchor.set(0, 1);
+    label.position.set(rect.x + 6 / z, rect.y - 8 / z);
+    const lw = label.width + 12 / z, lh = label.height + 6 / z;
+    g.roundRect(rect.x, rect.y - 5 / z - lh, lw, lh, 5 / z).fill({ color: AREA_COLORS.terrain }).stroke({ width: 1 / z, color: 0x000000, alpha: 0.6 });
   }
 
   private drawRuler(ruler: import('../editor/Editor').Ruler | null, z: number) {
@@ -697,4 +822,43 @@ export function canvasToBlob(canvas: HTMLCanvasElement, type: 'image/png' | 'ima
   return new Promise<Blob>((resolve, reject) =>
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Falha ao gerar a imagem'))), type, quality),
   );
+}
+
+/** Cores da seleção em área por tipo (também usadas no painel). */
+export const AREA_COLORS = {
+  terrain: theme.selection,
+  objects: 0xffa24a,
+  tokens: 0xff5fa2,
+  notes: 0xc59bff,
+  links: 0xffe066,
+} as const;
+
+function plural(n: number, one: string, many: string) {
+  return `${n.toLocaleString('pt-BR')} ${n === 1 ? one : many}`;
+}
+
+function dashedRect(g: Graphics, r: { x: number; y: number; width: number; height: number }, dash: number, gap: number) {
+  const side = (x0: number, y0: number, x1: number, y1: number) => {
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    if (!len) return;
+    const ux = (x1 - x0) / len, uy = (y1 - y0) / len;
+    for (let d = 0; d < len; d += dash + gap) {
+      const e = Math.min(len, d + dash);
+      g.moveTo(x0 + ux * d, y0 + uy * d).lineTo(x0 + ux * e, y0 + uy * e);
+    }
+  };
+  side(r.x, r.y, r.x + r.width, r.y);
+  side(r.x + r.width, r.y, r.x + r.width, r.y + r.height);
+  side(r.x + r.width, r.y + r.height, r.x, r.y + r.height);
+  side(r.x, r.y + r.height, r.x, r.y);
+}
+
+function dashedCircle(g: Graphics, cx: number, cy: number, r: number, dash: number, gap: number) {
+  const steps = Math.max(8, Math.floor((2 * Math.PI * r) / (dash + gap)));
+  const da = (2 * Math.PI) / steps;
+  const on = da * (dash / (dash + gap));
+  for (let i = 0; i < steps; i++) {
+    const a0 = i * da;
+    g.moveTo(cx + Math.cos(a0) * r, cy + Math.sin(a0) * r).arc(cx, cy, r, a0, a0 + on);
+  }
 }

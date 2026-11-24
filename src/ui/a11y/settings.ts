@@ -23,6 +23,8 @@ export interface A11ySettings {
   strongFocus: boolean;
   /** Atalhos de uma tecla só (letras, números, [ ] e R). */
   letterShortcuts: boolean;
+  /** Escurece o resto do mapa enquanto há uma seleção em área. */
+  dimOutsideSelection: boolean;
 }
 
 export const UI_SCALES = [0.85, 1, 1.15, 1.3, 1.5] as const;
@@ -35,6 +37,7 @@ export const DEFAULT_A11Y: A11ySettings = {
   colorVision: 'normal',
   strongFocus: false,
   letterShortcuts: true,
+  dimOutsideSelection: true,
 };
 
 const STORAGE_KEY = 'atlas-board:acessibilidade';
@@ -60,6 +63,7 @@ export function sanitizeA11y(raw: unknown): A11ySettings {
     colorVision: pick(VISIONS, r.colorVision, DEFAULT_A11Y.colorVision),
     strongFocus: typeof r.strongFocus === 'boolean' ? r.strongFocus : DEFAULT_A11Y.strongFocus,
     letterShortcuts: typeof r.letterShortcuts === 'boolean' ? r.letterShortcuts : DEFAULT_A11Y.letterShortcuts,
+    dimOutsideSelection: typeof r.dimOutsideSelection === 'boolean' ? r.dimOutsideSelection : DEFAULT_A11Y.dimOutsideSelection,
   };
 }
 
