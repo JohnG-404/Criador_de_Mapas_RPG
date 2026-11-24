@@ -1,5 +1,5 @@
 import { Application, Container, Graphics, Rectangle, Text } from 'pixi.js';
-import { getA11y } from '../ui/a11y/settings';
+import { getA11y, subscribeA11y } from '../ui/a11y/settings';
 import { Camera } from '../core/camera/Camera';
 import type { MapDocument } from '../core/doc/MapDocument';
 import { objectAsset } from '../core/doc/objects';
@@ -126,6 +126,7 @@ export class MapView {
     this.cleanup.push(this.editor.subscribe(() => this.onEditorState()));
     this.cleanup.push(this.editor.history.onChange(() => this.invalidate()));
     this.cleanup.push(this.editor.onOverlay(() => this.invalidate()));
+    this.cleanup.push(subscribeA11y(() => this.invalidate()));
 
     await this.loadDocument();
     this.app.stop();
@@ -561,11 +562,13 @@ export class MapView {
     // 1. Fora da seleção fica mais escuro.
     const b = grid.worldBounds();
     const pad = cell * 4;
+    if (getA11y().dimOutsideSelection) {
     const x0 = b.x - pad, y0 = b.y - pad, x1 = b.x + b.width + pad, y1 = b.y + b.height + pad;
     const rx1 = rect.x + rect.width, ry1 = rect.y + rect.height;
     g.rect(x0, y0, x1 - x0, rect.y - y0).rect(x0, ry1, x1 - x0, y1 - ry1)
       .rect(x0, rect.y, rect.x - x0, rect.height).rect(rx1, rect.y, x1 - rx1, rect.height)
       .fill({ color: 0x000000, alpha: dragging ? 0.3 : 0.5 });
+    }
     // 2. Células pegas: preenchimento leve e contorno fino.
     if (cells.length && cells.length <= 8000) {
       for (const c of cells) g.poly(grid.cellPolygon(c).flatMap((p) => [p.x, p.y]));
@@ -630,6 +633,18 @@ export class MapView {
         const rr = cell * 0.45 + gap;
         ring('links', () => g.circle(l.x, l.y, rr), { x: l.x + rr * 0.72, y: l.y - rr * 0.72 });
       }
+    }
+    // Itens que já estavam onde a área foi solta: tracejado branco e selo "!".
+    for (const c of area.covered ?? []) {
+      const it = this.doc[c.layer].get(c.id);
+      if (!it || !this.layers?.[c.layer].visible) continue;
+      const rr = c.layer === 'tokens' ? ((it as { size: number }).size * cell) / 2 * 0.9 + gap : cell * 0.5 + gap;
+      dashedCircle(g, it.x, it.y, rr, 6 / z, 4 / z);
+      g.stroke({ width: 2.5 / z, color: 0xffffff, alpha: 0.95 });
+      const bx = it.x + rr * 0.72, by = it.y - rr * 0.72, r = 7 / z;
+      g.circle(bx, by, r).fill(0xffffff).stroke({ width: 1.5 / z, color: 0x000000, alpha: 0.7 });
+      g.moveTo(bx, by - r * 0.5).lineTo(bx, by + r * 0.1).stroke({ width: 2 / z, color: 0x0b1620, cap: 'round' });
+      g.circle(bx, by + r * 0.45, 1.1 / z).fill(0x0b1620);
     }
     // 5. Etiqueta acima do canto superior esquerdo.
     const parts: string[] = [];
@@ -836,4 +851,14 @@ function dashedRect(g: Graphics, r: { x: number; y: number; width: number; heigh
   side(r.x + r.width, r.y, r.x + r.width, r.y + r.height);
   side(r.x + r.width, r.y + r.height, r.x, r.y + r.height);
   side(r.x, r.y + r.height, r.x, r.y);
+}
+
+function dashedCircle(g: Graphics, cx: number, cy: number, r: number, dash: number, gap: number) {
+  const steps = Math.max(8, Math.floor((2 * Math.PI * r) / (dash + gap)));
+  const da = (2 * Math.PI) / steps;
+  const on = da * (dash / (dash + gap));
+  for (let i = 0; i < steps; i++) {
+    const a0 = i * da;
+    g.moveTo(cx + Math.cos(a0) * r, cy + Math.sin(a0) * r).arc(cx, cy, r, a0, a0 + on);
+  }
 }

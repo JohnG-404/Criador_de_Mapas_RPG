@@ -74,10 +74,35 @@ describe('seleção em área', () => {
     e.pointerMove(at(7, 2));
     e.pointerUp();
     expect(e.doc.terrain.get(8, 3)).toBe(4);
-    expect(e.doc.terrain.get(3, 3)).toBe(EMPTY);
+    // O lugar de onde saiu recebe o terreno de fundo ao redor (grama).
+    expect(e.doc.terrain.get(3, 3)).toBe(1);
     const tok = e.doc.tokens.all().find((t) => Math.abs(t.y - at(4, 4).y) < 1)!;
     expect(tok.x).toBeCloseTo(at(9, 4).x);
     e.undo();
     expect(e.doc.terrain.get(3, 3)).toBe(4);
+  });
+
+  it('sem terreno em volta, o lugar de onde saiu fica vazio', () => {
+    const e = new Editor({ name: 't', gridKind: 'square', cols: 20, rows: 20, fill: EMPTY, cellMeters: 1.5 });
+    const at = (col: number, row: number) => e.doc.grid.cellToWorld({ col, row });
+    e.setTerrain(4); e.setBrushSize(1);
+    e.pointerDown(at(3, 3)); e.pointerUp();
+    e.setTool('select');
+    box(e, [3, 3], [3, 3]);
+    e.pointerDown(at(3, 3)); e.pointerMove(at(6, 3)); e.pointerUp();
+    expect(e.doc.terrain.get(3, 3)).toBe(EMPTY);
+    expect(e.doc.terrain.get(6, 3)).toBe(4);
+  });
+
+  it('avisa o que ficou por baixo e permite incluir na seleção', () => {
+    const { e, at } = setup();
+    box(e, [2, 2], [5, 5]);
+    // Leva a caixa até o token que está em (12, 12).
+    e.pointerDown(at(2, 2)); e.pointerMove(at(10, 10)); e.pointerUp();
+    const area = e.getState().area!;
+    expect(area.covered).toEqual([{ layer: 'tokens', id: expect.any(String) }]);
+    e.includeCovered();
+    expect(e.getState().area!.tokens).toHaveLength(2);
+    expect(e.getState().area!.covered).toEqual([]);
   });
 });

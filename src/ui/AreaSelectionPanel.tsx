@@ -42,6 +42,15 @@ export function AreaSelectionPanel({ editor, state }: { editor: Editor; state: E
           </li>
         ))}
       </ul>
+      {!!area.covered?.length && (
+        <div className="area-covered" role="status">
+          <p>
+            {area.covered.length === 1 ? '1 item já estava' : `${area.covered.length} itens já estavam`} no lugar e
+            {area.covered.length === 1 ? ' ficou' : ' ficaram'} por baixo (marcados com <strong>!</strong> no mapa).
+          </p>
+          <button onClick={() => editor.includeCovered()}>Incluir na seleção</button>
+        </div>
+      )}
       <p className="help">Desmarque um tipo para tirá-lo da seleção sem perder o resto.</p>
       <div className="area-actions">
         {filter.terrain && area.cells.length > 0 && (

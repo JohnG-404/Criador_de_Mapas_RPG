@@ -71,6 +71,8 @@ export interface AreaSelection {
   tokens: string[];
   notes: string[];
   links: string[];
+  /** Itens que já estavam onde a área foi solta e ficaram por baixo (não foram movidos). */
+  covered?: { layer: SelectableLayer; id: string }[];
 }
 
 /** O que a visualização desenha por cima do mapa durante um gesto. */
@@ -1052,7 +1054,7 @@ export class Editor {
     touched.forEach((l) => this.layerOf(l).emit());
     d.moved = dx !== 0 || dy !== 0;
     const area = this.state.area;
-    if (area) this.set({ area: { ...area, rect: { ...d.rect, x: d.rect.x + dx, y: d.rect.y + dy }, cells: this.shiftCells(d.cells, dx, dy) } });
+    if (area) this.set({ area: { ...area, rect: { ...d.rect, x: d.rect.x + dx, y: d.rect.y + dy }, cells: this.shiftCells(d.cells, dx, dy), covered: [] } });
   }
 
   private finishGroup() {
@@ -1064,7 +1066,9 @@ export class Editor {
       const cmd = new PaintCommand(this.doc.terrain, 'Mover seleção');
       const src = this.doc.terrain;
       const values = d.cells.map((c) => src.getCell(c));
-      for (const c of d.cells) cmd.paint(c.col, c.row, EMPTY);
+      // O lugar de onde o terreno saiu recebe o terreno de fundo ao redor da área.
+      const fill = this.surroundingTerrain(d.cells);
+      for (const c of d.cells) cmd.paint(c.col, c.row, fill);
       const moved = this.shiftCells(d.cells, d.delta.x, d.delta.y, false);
       moved.forEach((c, i) => { if (c) cmd.paint(c.col, c.row, values[i]); });
       src.flush();
@@ -1078,6 +1082,41 @@ export class Editor {
       groups.get(layer)!.push([item.id, after]);
     }
     this.commitGroup('Mover seleção', [...groups].map(([l, changes]) => ({ layer: this.layerOf(l), changes })), extra);
+    // Avisa o que já estava no lugar de destino e ficou por baixo.
+    const area = this.state.area;
+    if (area) {
+      const under = this.areaInRect(area.rect);
+      const covered = (['objects', 'tokens', 'notes', 'links'] as SelectableLayer[])
+        .flatMap((l) => under[l].filter((id) => !area[l].includes(id)).map((id) => ({ layer: l, id })));
+      this.set({ area: { ...area, covered } });
+    }
+  }
+
+  /** Põe na seleção os itens que ficaram por baixo depois de mover. */
+  includeCovered() {
+    const area = this.state.area;
+    if (!area?.covered?.length) return;
+    const next = { ...area, covered: [] as { layer: SelectableLayer; id: string }[] };
+    for (const c of area.covered) next[c.layer] = [...next[c.layer], c.id];
+    this.set({ area: next });
+  }
+
+  /** Terreno mais comum nas células vizinhas à área (fora dela); vazio se não houver. */
+  private surroundingTerrain(cells: Cell[]): number {
+    const grid = this.doc.grid;
+    const inside = new Set(cells.map((c) => c.row * grid.cols + c.col));
+    const counts = new Map<number, number>();
+    for (const c of cells) {
+      for (const n of grid.neighbors(c)) {
+        if (inside.has(n.row * grid.cols + n.col)) continue;
+        const v = this.doc.terrain.getCell(n);
+        if (v === EMPTY) continue;
+        counts.set(v, (counts.get(v) ?? 0) + 1);
+      }
+    }
+    let best = EMPTY, max = 0;
+    counts.forEach((n, v) => { if (n > max) { max = n; best = v; } });
+    return best;
   }
 
   /** Células deslocadas por (dx, dy) em pixels; as que saem do mapa somem (ou viram null). */
