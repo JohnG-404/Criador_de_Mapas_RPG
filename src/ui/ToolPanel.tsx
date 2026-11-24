@@ -8,6 +8,7 @@ import { LAYERS, MAX_BRUSH, MIN_BRUSH, TOOLS, type Editor, type EditorState, typ
 import { OBJECT_TEXTURE_URLS, WALL_TEXTURE_URLS } from '../render/objectTextures';
 import { WALL_STYLES } from '../core/doc/walls';
 import { LinkPanel, MapsPanel } from './CampaignPanel';
+import { AreaSelectionPanel } from './AreaSelectionPanel';
 import { TERRAIN_TEXTURE_URLS } from '../render/terrainTextures';
 
 const TOOL_ICONS: Record<ToolId, string> = {
@@ -246,7 +247,8 @@ export function ToolPanel({ editor, state, onOpenSheet }: { editor: Editor; stat
       )}
       {tool === 'token' && <TokenTemplates editor={editor} state={state} />}
 
-      {tool === 'select' && !editor.selectedNote() && !editor.selectedLink() && <SelectionPanel editor={editor} state={state} onOpenSheet={onOpenSheet} />}
+      {tool === 'select' && state.area && <AreaSelectionPanel editor={editor} state={state} />}
+      {tool === 'select' && !state.area && !editor.selectedNote() && !editor.selectedLink() && <SelectionPanel editor={editor} state={state} onOpenSheet={onOpenSheet} />}
 
       <MapsPanel editor={editor} state={state} />
 
@@ -312,7 +314,7 @@ function SelectionPanel({ editor, onOpenSheet }: { editor: Editor; state: Editor
     return (
       <section>
         <h2>Seleção</h2>
-        <p className="help">Clique num objeto, token, nota ou passagem para selecionar e arraste para mover. Clique numa porta para abrir ou fechar.</p>
+        <p className="help">Clique num objeto, token, nota ou passagem para selecionar e arraste para mover. Arraste num espaço vazio para selecionar uma área. Clique numa porta para abrir ou fechar.</p>
       </section>
     );
   }

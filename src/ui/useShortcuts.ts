@@ -16,6 +16,7 @@ export function useShortcuts(editor: Editor, enabled: boolean) {
       if (e.ctrlKey || e.metaKey) {
         if (key === 'z' && !e.shiftKey) editor.undo();
         else if ((key === 'z' && e.shiftKey) || key === 'y') editor.redo();
+        else if (key === 'a') editor.selectAll();
         else return;
         e.preventDefault();
         return;
@@ -23,8 +24,8 @@ export function useShortcuts(editor: Editor, enabled: boolean) {
       if (e.altKey) return;
       // Acessibilidade: atalhos de uma tecla podem ser desligados (WCAG 2.1.4).
       if (!getA11y().letterShortcuts) {
-        if (e.key === 'Escape') { editor.clearRuler(); if (editor.getState().selection) editor.clearSelection(); }
-        else if ((e.key === 'Delete' || e.key === 'Backspace') && editor.getState().selection) { editor.deleteSelection(); e.preventDefault(); }
+        if (e.key === 'Escape') { editor.clearRuler(); if (editor.hasSelection) editor.clearSelection(); }
+        else if ((e.key === 'Delete' || e.key === 'Backspace') && editor.hasSelection) { editor.deleteSelection(); e.preventDefault(); }
         return;
       }
       const tool = TOOLS.find((x) => x.key === key);
@@ -32,7 +33,7 @@ export function useShortcuts(editor: Editor, enabled: boolean) {
       const n = Number(e.key);
       if (n >= 1 && n <= TERRAINS.length) { editor.setTerrain(TERRAINS[n - 1].id); e.preventDefault(); return; }
       if (e.key === 'Escape') editor.clearRuler();
-      const hasSelection = editor.getState().selection !== null;
+      const hasSelection = editor.hasSelection;
       if (e.key === '[' || e.key === ']') {
         const step = e.key === ']' ? 1 : -1;
         if (hasSelection) editor.resizeSelection(step);

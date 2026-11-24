@@ -8,7 +8,8 @@ import { EMPTY, TERRAINS } from '../core/doc/terrain';
 import {
   DEFAULT_WALL_STYLE, hitSegment, nearestEdge, rectangleSegments, samePoint, snapToVertex, styleField, subtractCollinear, type WallSegment,
 } from '../core/doc/walls';
-import type { Cell, Point } from '../core/grid/GridSystem';
+import type { Cell, Point, Rect } from '../core/grid/GridSystem';
+import type { Command } from '../core/history/History';
 import { CompositeCommand, History } from '../core/history/History';
 import { generate, type GeneratorKind } from '../core/procgen';
 import { PaintCommand } from '../core/history/PaintCommand';
@@ -57,12 +58,29 @@ export interface LayerState { visible: boolean; locked: boolean }
 export type SelectableLayer = 'objects' | 'tokens' | 'notes' | 'links';
 export type Selection = { layer: SelectableLayer; id: string } | null;
 
+/** O que a seleção em área pode pegar: terreno (células) e cada camada de itens. */
+export type AreaKind = 'terrain' | SelectableLayer;
+export const AREA_KINDS: AreaKind[] = ['terrain', 'objects', 'tokens', 'notes', 'links'];
+
+/** Resultado de arrastar uma caixa com Selecionar: células e itens dentro dela. */
+export interface AreaSelection {
+  /** Retângulo arrastado, em coordenadas do mundo. */
+  rect: Rect;
+  cells: Cell[];
+  objects: string[];
+  tokens: string[];
+  notes: string[];
+  links: string[];
+}
+
 /** O que a visualização desenha por cima do mapa durante um gesto. */
 export interface Overlay {
   wallPreview: { segments: [Point, Point][]; snap: Point } | null;
   doorPreview: { a: Point; b: Point } | null;
   eraseTarget: WallSegment | null;
   ruler: Ruler | null;
+  /** Caixa sendo arrastada com Selecionar e o que ela pegaria se soltar agora. */
+  marquee: AreaSelection | null;
 }
 
 /** Medida da régua: de centro de célula a centro de célula. */
@@ -91,6 +109,10 @@ export interface EditorState {
   /** Revela a névoa pela visão dos personagens de jogador a cada movimento. */
   autoReveal: boolean;
   selection: Selection;
+  /** Seleção em área (caixa). Convive com `selection` = null. */
+  area: AreaSelection | null;
+  /** Tipos que a seleção em área considera (desligar um tira o destaque e as ações dele). */
+  areaFilter: Record<AreaKind, boolean>;
   layers: Record<LayerId, LayerState>;
   canUndo: boolean;
   canRedo: boolean;
@@ -127,6 +149,11 @@ export class Editor {
   private listeners = new Set<() => void>();
   private stroke: { cmd: PaintCommand; last: Point; value: number; elev?: { mode: ElevMode; amounts: Map<number, number>; target: number } } | null = null;
   private wallDrag: { start: Point; end: Point; rect: boolean } | null = null;
+  private boxDrag: { a: Point; b: Point; add: boolean } | null = null;
+  private groupDrag: {
+    start: Point; anchor: { layer: SelectableLayer; id: string } | null; before: { layer: SelectableLayer; item: MapObject | Token | Note | MapLink }[];
+    rect: Rect; cells: Cell[]; moveTerrain: boolean; delta: Point; moved: boolean;
+  } | null = null;
   private moveDrag: { layer: SelectableLayer; id: string; dx: number; dy: number; before: MapObject | Token | Note | MapLink; moved: boolean } | null = null;
   /** Todos os mapas da campanha (o atual incluso), na ordem da lista. */
   private mapList: MapDocument[];
@@ -138,7 +165,7 @@ export class Editor {
   private ruler: Ruler | null = null;
   private hoverPoint: Point | null = null;
   private hoverAlt = false;
-  overlay: Overlay = { wallPreview: null, doorPreview: null, eraseTarget: null, ruler: null };
+  overlay: Overlay = { wallPreview: null, doorPreview: null, eraseTarget: null, ruler: null, marquee: null };
   private overlayListeners = new Set<() => void>();
 
   constructor(options: NewMapOptions = DEFAULT_MAP) {
@@ -159,6 +186,8 @@ export class Editor {
       elevStrength: 4,
       autoReveal: true,
       selection: null,
+      area: null,
+      areaFilter: { terrain: true, objects: true, tokens: true, notes: true, links: true },
       layers: {
         terrain: { visible: true, locked: false },
         elevation: { visible: true, locked: false },
@@ -178,7 +207,7 @@ export class Editor {
       // Desfazer pode apagar o item selecionado.
       const sel = this.state.selection;
       const gone = sel && !this.doc[sel.layer].get(sel.id);
-      this.set({ canUndo: this.history.canUndo, canRedo: this.history.canRedo, ...(gone ? { selection: null } : {}) });
+      this.set({ canUndo: this.history.canUndo, canRedo: this.history.canRedo, ...(gone ? { selection: null } : {}), ...(this.state.area ? { area: this.pruneArea(this.state.area) } : {}) });
     });
   }
 
@@ -196,7 +225,7 @@ export class Editor {
   setTool(tool: ToolId) {
     this.endGestures();
     this.ruler = null;
-    this.set({ tool, selection: tool === 'select' ? this.state.selection : null });
+    this.set({ tool, selection: tool === 'select' ? this.state.selection : null, area: tool === 'select' ? this.state.area : null });
     this.refreshOverlay();
   }
   setObjectAsset(objectAsset: string) { this.set({ objectAsset, tool: 'object' }); }
@@ -556,7 +585,7 @@ export class Editor {
     const { tool } = this.state;
     const grid = this.doc.grid;
     if (!this.toolLayerEditable) return;
-    if (tool === 'select') return this.selectAt(p);
+    if (tool === 'select') return this.selectAt(p, !!mods.shift);
     if (tool === 'ruler') {
       const c = this.snapCellCenter(p);
       this.rulerDrag = { a: c, b: c };
@@ -622,6 +651,12 @@ export class Editor {
       return;
     }
     if (this.moveDrag) return this.dragSelection(p, !!mods.shift);
+    if (this.boxDrag) {
+      this.boxDrag.b = p;
+      this.refreshOverlay();
+      return;
+    }
+    if (this.groupDrag) return this.dragGroup(p);
     if (this.rulerDrag) {
       this.rulerDrag.b = this.snapCellCenter(p);
       this.ruler = this.measure(this.rulerDrag.a, this.rulerDrag.b);
@@ -636,6 +671,8 @@ export class Editor {
   pointerUp() {
     if (this.wallDrag) return this.finishWall();
     if (this.moveDrag) return this.finishMove();
+    if (this.boxDrag) return this.finishBox();
+    if (this.groupDrag) return this.finishGroup();
     if (this.rulerDrag) { this.rulerDrag = null; return; }
     if (!this.stroke) return;
     this.history.push(this.stroke.cmd);
@@ -649,7 +686,7 @@ export class Editor {
     this.refreshOverlay();
   }
 
-  get isStroking() { return this.stroke !== null || this.wallDrag !== null || this.moveDrag !== null; }
+  get isStroking() { return this.stroke !== null || this.wallDrag !== null || this.moveDrag !== null || this.boxDrag !== null || this.groupDrag !== null; }
 
   /** Distância em células (diagonal conta 1 no grid quadrado, como na maioria dos sistemas) e em metros. */
   private measure(a: Point, b: Point): Ruler {
@@ -671,9 +708,12 @@ export class Editor {
   }
 
   // ---- seleção (objetos e tokens)
-  clearSelection() { if (this.state.selection) this.set({ selection: null }); }
+  clearSelection() { if (this.state.selection || this.state.area) this.set({ selection: null, area: null }); }
+
+  get hasSelection() { return this.state.selection !== null || this.state.area !== null; }
 
   deleteSelection() {
+    if (this.state.area) return this.deleteArea();
     const sel = this.state.selection;
     if (!sel) return;
     if (sel.layer === 'objects') this.commit(this.doc.objects, 'Apagar objeto', [[sel.id, null]]);
@@ -833,7 +873,7 @@ export class Editor {
     return l.visible && !l.locked;
   }
 
-  private selectAt(p: Point) {
+  private selectAt(p: Point, add = false) {
     const cell = this.doc.grid.cellSize;
     let hit: Selection = null;
     if (this.layerUsable('tokens')) {
@@ -852,15 +892,28 @@ export class Editor {
       const o = this.doc.objects.all().reverse().find((o) => hitObject(o, cell, p));
       if (o) hit = { layer: 'objects', id: o.id };
     }
-    this.set({ selection: hit });
+    // Pegou um item que está na seleção em área: arrasta o grupo todo.
+    const area = this.state.area;
+    if (hit && area && this.activeIds(area, hit.layer).includes(hit.id)) return this.startGroupDrag(p, hit, area);
+    // Clique dentro da caixa (fora de itens de fora): também arrasta tudo.
+    if (area && !hit && insideRect(area.rect, p)) return this.startGroupDrag(p, null, area);
     if (!hit) {
       // Clicar numa porta com Selecionar abre ou fecha.
       if (this.layerUsable('walls')) {
         const door = hitSegment(this.doc.walls.all().filter((w) => w.kind === 'door'), p, cell * 0.35);
-        if (door) this.commit(this.doc.walls, door.open ? 'Fechar porta' : 'Abrir porta', [[door.id, { ...door, open: !door.open }]]);
+        if (door) {
+          this.set({ selection: null });
+          this.commit(this.doc.walls, door.open ? 'Fechar porta' : 'Abrir porta', [[door.id, { ...door, open: !door.open }]]);
+          return;
+        }
       }
+      // Espaço vazio: começa uma caixa de seleção.
+      this.boxDrag = { a: p, b: p, add };
+      if (!add) this.set({ selection: null });
+      this.refreshOverlay();
       return;
     }
+    this.set({ selection: hit, area: null });
     const item = this.layerOf(hit.layer).get(hit.id)!;
     this.moveDrag = { layer: hit.layer, id: hit.id, dx: item.x - p.x, dy: item.y - p.y, before: item, moved: false };
   }
@@ -889,6 +942,217 @@ export class Editor {
     layer.put(d.id, d.before);
     const label = { objects: 'Mover objeto', notes: 'Mover nota', links: 'Mover passagem', tokens: 'Mover token' }[d.layer];
     this.commit(layer, label, [[d.id, after]]);
+  }
+
+  // ---- seleção em área
+  /** Células (pelo centro) e itens (pelo centro) dentro do retângulo, nas camadas visíveis e destravadas. */
+  areaInRect(rect: Rect): AreaSelection {
+    const grid = this.doc.grid;
+    const inside = (p: Point) => p.x >= rect.x && p.x <= rect.x + rect.width && p.y >= rect.y && p.y <= rect.y + rect.height;
+    const cells: Cell[] = [];
+    const range = grid.cellRangeInRect(rect);
+    if (range && this.layerUsable('terrain')) {
+      for (let row = range.minRow; row <= range.maxRow; row++) {
+        for (let col = range.minCol; col <= range.maxCol; col++) {
+          if (inside(grid.cellToWorld({ col, row }))) cells.push({ col, row });
+        }
+      }
+    }
+    const ids = (l: SelectableLayer) => (this.layerUsable(l) ? this.layerOf(l).all().filter(inside).map((i) => i.id) : []);
+    return { rect, cells, objects: ids('objects'), tokens: ids('tokens'), notes: ids('notes'), links: ids('links') };
+  }
+
+  /** Ids de uma camada que a seleção em área considera agora (respeita o filtro). */
+  activeIds(area: AreaSelection, layer: SelectableLayer): string[] {
+    return this.state.areaFilter[layer] ? area[layer] : [];
+  }
+  activeCells(area: AreaSelection): Cell[] {
+    return this.state.areaFilter.terrain ? area.cells : [];
+  }
+
+  setAreaFilter(kind: AreaKind, on: boolean) {
+    this.set({ areaFilter: { ...this.state.areaFilter, [kind]: on } });
+  }
+
+  /** Seleciona o mapa inteiro (Ctrl+A). */
+  selectAll() {
+    if (this.state.tool !== 'select') this.setTool('select');
+    this.set({ selection: null, area: this.areaInRect(this.doc.grid.worldBounds()) });
+  }
+
+  private pruneArea(area: AreaSelection): AreaSelection {
+    const keep = (l: SelectableLayer) => area[l].filter((id) => !!this.layerOf(l).get(id));
+    return { ...area, objects: keep('objects'), tokens: keep('tokens'), notes: keep('notes'), links: keep('links') };
+  }
+
+  private finishBox() {
+    const { a, b, add } = this.boxDrag!;
+    this.boxDrag = null;
+    const rect = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) };
+    // Um clique sem arrastar limpa a seleção.
+    if (rect.width < this.doc.grid.cellSize * 0.2 && rect.height < this.doc.grid.cellSize * 0.2) {
+      if (!add) this.set({ area: null });
+      this.refreshOverlay();
+      return;
+    }
+    let area = this.areaInRect(rect);
+    const prev = this.state.area;
+    if (add && prev) {
+      const merge = (x: string[], y: string[]) => [...new Set([...x, ...y])];
+      const seen = new Set(prev.cells.map((c) => c.row * this.doc.grid.cols + c.col));
+      const x0 = Math.min(prev.rect.x, rect.x), y0 = Math.min(prev.rect.y, rect.y);
+      area = {
+        rect: { x: x0, y: y0, width: Math.max(prev.rect.x + prev.rect.width, rect.x + rect.width) - x0, height: Math.max(prev.rect.y + prev.rect.height, rect.y + rect.height) - y0 },
+        cells: [...prev.cells, ...area.cells.filter((c) => !seen.has(c.row * this.doc.grid.cols + c.col))],
+        objects: merge(prev.objects, area.objects), tokens: merge(prev.tokens, area.tokens),
+        notes: merge(prev.notes, area.notes), links: merge(prev.links, area.links),
+      };
+    }
+    const empty = !area.cells.length && !area.objects.length && !area.tokens.length && !area.notes.length && !area.links.length;
+    this.set({ selection: null, area: empty ? null : area });
+    this.refreshOverlay();
+  }
+
+  private startGroupDrag(p: Point, anchor: { layer: SelectableLayer; id: string } | null, area: AreaSelection) {
+    const before: { layer: SelectableLayer; item: MapObject | Token | Note | MapLink }[] = [];
+    for (const l of ['objects', 'tokens', 'notes', 'links'] as SelectableLayer[]) {
+      for (const id of this.activeIds(area, l)) {
+        const item = this.layerOf(l).get(id);
+        if (item) before.push({ layer: l, item });
+      }
+    }
+    const cells = this.activeCells(area);
+    // O terreno anda junto em células inteiras (no hex, por ora, só os itens andam).
+    const moveTerrain = cells.length > 0 && this.doc.grid.kind === 'square';
+    this.groupDrag = { start: p, anchor, before, rect: area.rect, cells: area.cells, moveTerrain, delta: { x: 0, y: 0 }, moved: false };
+  }
+
+  private dragGroup(p: Point) {
+    const d = this.groupDrag!;
+    const size = this.doc.grid.cellSize;
+    let dx = p.x - d.start.x, dy = p.y - d.start.y;
+    const anchor = d.anchor && d.before.find((b) => b.layer === d.anchor!.layer && b.item.id === d.anchor!.id)?.item;
+    if (d.moveTerrain || !anchor) {
+      // Com terreno junto, anda de célula em célula para tudo continuar alinhado.
+      dx = Math.round(dx / size) * size;
+      dy = Math.round(dy / size) * size;
+    } else {
+      // O item agarrado encaixa como de costume; os outros andam o mesmo tanto.
+      const raw = { x: anchor.x + dx, y: anchor.y + dy };
+      const snapped = d.anchor!.layer === 'notes' ? raw : d.anchor!.layer === 'objects' ? this.snapHalf(raw) : this.snapCellCenter(raw);
+      dx = snapped.x - anchor.x; dy = snapped.y - anchor.y;
+    }
+    if (dx === d.delta.x && dy === d.delta.y) return;
+    d.delta = { x: dx, y: dy };
+    const touched = new Set<SelectableLayer>();
+    for (const { layer, item } of d.before) {
+      this.layerOf(layer).put(item.id, { ...item, x: item.x + dx, y: item.y + dy });
+      touched.add(layer);
+    }
+    touched.forEach((l) => this.layerOf(l).emit());
+    d.moved = dx !== 0 || dy !== 0;
+    const area = this.state.area;
+    if (area) this.set({ area: { ...area, rect: { ...d.rect, x: d.rect.x + dx, y: d.rect.y + dy }, cells: this.shiftCells(d.cells, dx, dy) } });
+  }
+
+  private finishGroup() {
+    const d = this.groupDrag!;
+    this.groupDrag = null;
+    if (!d.moved) return;
+    const extra: Command[] = [];
+    if (d.moveTerrain) {
+      const cmd = new PaintCommand(this.doc.terrain, 'Mover seleção');
+      const src = this.doc.terrain;
+      const values = d.cells.map((c) => src.getCell(c));
+      for (const c of d.cells) cmd.paint(c.col, c.row, EMPTY);
+      const moved = this.shiftCells(d.cells, d.delta.x, d.delta.y, false);
+      moved.forEach((c, i) => { if (c) cmd.paint(c.col, c.row, values[i]); });
+      src.flush();
+      extra.push(cmd);
+    }
+    const groups = new Map<SelectableLayer, [string, MapObject | Token | Note | MapLink][]>();
+    for (const { layer, item } of d.before) {
+      const after = this.layerOf(layer).get(item.id)!;
+      this.layerOf(layer).put(item.id, item);
+      if (!groups.has(layer)) groups.set(layer, []);
+      groups.get(layer)!.push([item.id, after]);
+    }
+    this.commitGroup('Mover seleção', [...groups].map(([l, changes]) => ({ layer: this.layerOf(l), changes })), extra);
+  }
+
+  /** Células deslocadas por (dx, dy) em pixels; as que saem do mapa somem (ou viram null). */
+  private shiftCells(cells: Cell[], dx: number, dy: number, drop?: true): Cell[];
+  private shiftCells(cells: Cell[], dx: number, dy: number, drop: false): (Cell | null)[];
+  private shiftCells(cells: Cell[], dx: number, dy: number, drop = true) {
+    const grid = this.doc.grid;
+    if (grid.kind !== 'square') return cells;
+    const dc = Math.round(dx / grid.cellSize), dr = Math.round(dy / grid.cellSize);
+    const out = cells.map((c) => {
+      const n = { col: c.col + dc, row: c.row + dr };
+      return n.col >= 0 && n.row >= 0 && n.col < grid.cols && n.row < grid.rows ? n : null;
+    });
+    return drop ? out.filter((c): c is Cell => c !== null) : out;
+  }
+
+  /** Apaga tudo o que está ativo na seleção em área, num único passo do histórico. */
+  deleteArea() {
+    const area = this.state.area;
+    if (!area) return;
+    const extra: Command[] = [];
+    const cells = this.activeCells(area);
+    if (cells.length) {
+      const cmd = new PaintCommand(this.doc.terrain, 'Apagar seleção');
+      for (const c of cells) cmd.paint(c.col, c.row, EMPTY);
+      this.doc.terrain.flush();
+      extra.push(cmd);
+    }
+    const groups = (['objects', 'tokens', 'notes', 'links'] as SelectableLayer[]).map((l) => ({
+      layer: this.layerOf(l), changes: this.activeIds(area, l).map((id) => [id, null] as [string, null]),
+    }));
+    this.commitGroup('Apagar seleção', groups, extra);
+    this.set({ area: null });
+  }
+
+  /** Pinta as células selecionadas com o terreno escolhido. */
+  fillArea() {
+    const area = this.state.area;
+    if (!area) return;
+    const cmd = new PaintCommand(this.doc.terrain, 'Preencher seleção');
+    for (const c of this.activeCells(area)) cmd.paint(c.col, c.row, this.state.terrain);
+    this.doc.terrain.flush();
+    this.history.push(cmd);
+  }
+
+  /** Cobre ou revela a névoa nas células da área (independe do filtro de terreno). */
+  fogArea(hide: boolean) {
+    const area = this.state.area;
+    if (!area) return;
+    const cmd = new PaintCommand(this.doc.fog, hide ? 'Cobrir seleção com névoa' : 'Revelar seleção');
+    for (const c of area.cells) cmd.paint(c.col, c.row, hide ? FOG_HIDDEN : FOG_CLEAR);
+    this.doc.fog.flush();
+    this.history.push(cmd);
+  }
+
+  private commitGroup(label: string, groups: { layer: ItemLayer<MapObject | Token | Note | MapLink>; changes: [string, MapObject | Token | Note | MapLink | null][] }[], extra: Command[] = []) {
+    const parts: Command[] = [...extra];
+    let tokens = false;
+    for (const g of groups) {
+      if (!g.changes.length) continue;
+      const cmd = new ItemsCommand(g.layer, label);
+      for (const [id, item] of g.changes) cmd.set(id, item);
+      g.layer.emit();
+      parts.push(cmd);
+      if ((g.layer as unknown) === this.doc.tokens) tokens = true;
+    }
+    if (tokens) {
+      const fog = this.state.autoReveal ? this.visionFogCommand() : null;
+      if (fog) parts.push(fog);
+      const ini = this.doc.initiative.get();
+      const pruned = pruneEntries(ini, (id) => !!this.doc.tokens.get(id));
+      if (pruned !== ini) { const c = new InitiativeCommand(label, this.doc.initiative, ini, pruned); c.apply(); parts.push(c); }
+    }
+    if (!parts.length) return;
+    this.history.push(parts.length > 1 ? new CompositeCommand(label, parts) : parts[0]);
   }
 
   private layerOf(id: SelectableLayer): ItemLayer<MapObject | Token | Note | MapLink> {
@@ -1026,12 +1290,17 @@ export class Editor {
       else if (tool === 'wall') wallPreview = { segments: [], snap: snapToVertex(grid, this.hoverPoint) };
       else doorPreview = nearestEdge(grid, this.hoverPoint);
     }
-    this.overlay = { wallPreview, doorPreview, eraseTarget, ruler: this.ruler };
+    let marquee: AreaSelection | null = null;
+    if (this.boxDrag) {
+      const { a, b } = this.boxDrag;
+      marquee = this.areaInRect({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) });
+    }
+    this.overlay = { wallPreview, doorPreview, eraseTarget, ruler: this.ruler, marquee };
     this.overlayListeners.forEach((fn) => fn());
   }
 
   private endGestures() {
-    if (this.stroke || this.wallDrag || this.moveDrag || this.rulerDrag) this.pointerUp();
+    if (this.stroke || this.wallDrag || this.moveDrag || this.rulerDrag || this.boxDrag || this.groupDrag) this.pointerUp();
   }
 
   private paintSegment(a: Point, b: Point) {
@@ -1111,4 +1380,8 @@ function freeCellsAround(doc: MapDocument, p: Point, count: number): Point[] {
     }
   }
   return out;
+}
+
+function insideRect(r: Rect, p: Point) {
+  return p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height;
 }
