@@ -26,6 +26,8 @@ export interface Token extends Item {
   vision?: number;
   /** Modelo de origem (arte e sistema), ver tokenTemplates.ts. */
   template?: string;
+  /** Imagem própria do token: id de uma imagem em doc.assets (vale mais que a arte do modelo). */
+  art?: string;
   /** Ficha básica (PV, defesa, sanidade...). */
   sheet?: TokenSheet;
 }
@@ -108,6 +110,8 @@ export const OBJECT_ASSETS: readonly ObjectAsset[] = [
 export interface CustomAsset extends Item, ObjectAsset {
   /** data:image/...;base64,... */
   data: string;
+  /** Retrato de token (não aparece na paleta de objetos). */
+  token?: boolean;
 }
 
 export const CUSTOM_ASSET_PREFIX = 'img-';

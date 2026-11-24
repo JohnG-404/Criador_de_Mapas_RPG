@@ -63,7 +63,10 @@ export function forPlayers(doc: MapDocument): MapFile {
     return !!c && doc.fog.get(c.col, c.row) === FOG_HIDDEN;
   };
   const tokens = map.tokens.filter((t) => t.pc || !hidden(t.x, t.y));
-  const out: MapFile = { ...map, notes: [], links: [], tokens };
+  // Retratos próprios só dos tokens que continuam visíveis (não revela inimigo escondido pela imagem).
+  const used = new Set([...map.objects.map((o) => o.asset), ...tokens.flatMap((t) => (t.art ? [t.art] : []))]);
+  const assets = map.assets?.filter((a) => used.has(a.key));
+  const out: MapFile = { ...map, notes: [], links: [], tokens, ...(map.assets ? { assets } : {}) };
   if (map.initiative) {
     const visible = new Set(tokens.map((t) => t.id));
     const current = map.initiative.entries[map.initiative.turn]?.id;

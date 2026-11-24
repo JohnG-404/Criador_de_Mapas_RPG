@@ -1,6 +1,7 @@
 import type { MapDocument } from '../core/doc/MapDocument';
 import { isCustomAsset, objectAsset } from '../core/doc/objects';
 import { wallStyleOf } from '../core/doc/walls';
+import { tokenArtKey } from '../render/tokenArt';
 import { ELEV_ZERO, LEVEL_HEIGHT } from '../core/doc/elevation';
 
 /**
@@ -57,8 +58,8 @@ export interface Mini {
   z: number;
   size: number;
   ground: number;
-  /** Modelo do token (retrato em assets/tokens). */
-  template?: string;
+  /** Retrato do token: chave do modelo (assets/tokens) ou id da imagem própria (doc.assets). */
+  art?: string;
 }
 
 export interface SceneData {
@@ -207,7 +208,7 @@ export function buildSceneData(doc: MapDocument, wallHeight: WallHeight = 'media
 
   const minis: Mini[] = doc.tokens.all().map((t) => ({
     id: t.id, name: t.name, color: t.color, x: t.x / cell, z: t.y / cell, size: t.size, ground: surface(t.x, t.y),
-    ...(t.template ? { template: t.template } : {}),
+    ...(tokenArtKey(t) ? { art: tokenArtKey(t) } : {}),
   }));
 
   const { cols, rows } = doc.grid;

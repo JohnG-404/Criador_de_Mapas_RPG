@@ -276,8 +276,9 @@ export class View3D {
         const tex = t && await t.catch(() => null);
         if (tex) propTex.set(k, tex);
       }),
-      ...(layers.has('minis') ? [...new Set(s.minis.map((m) => m.template).filter((k): k is string => !!k && !!TOKEN_ART_URLS[k]))] : []).map(async (k) => {
-        const tex = await this.texture(`token:${k}`, TOKEN_ART_URLS[k]).catch(() => null);
+      ...(layers.has('minis') ? [...new Set(s.minis.map((m) => m.art).filter((k): k is string => !!k))] : []).map(async (k) => {
+        const t = TOKEN_ART_URLS[k] ? this.texture(`token:${k}`, TOKEN_ART_URLS[k]) : this.propTexture(k);
+        const tex = t && await t.catch(() => null);
         if (tex) tokenTex.set(k, tex);
       }),
     ]);
@@ -425,8 +426,8 @@ export class View3D {
    */
   private addMinis(s: SceneData, art: Map<string, Texture>) {
     if (!s.minis.length) return;
-    const plain = s.minis.filter((t) => !(t.template && art.get(t.template)));
-    const portrait = s.minis.filter((t) => t.template && art.get(t.template));
+    const plain = s.minis.filter((t) => !(t.art && art.get(t.art)));
+    const portrait = s.minis.filter((t) => t.art && art.get(t.art));
     const m = new Matrix4(), q = new Quaternion(), pos = new Vector3(), sc = new Vector3(), color = new Color();
     const finish = (im: InstancedMesh, shadows: boolean) => {
       im.instanceMatrix.needsUpdate = true;
@@ -455,7 +456,7 @@ export class View3D {
       });
       finish(disc, true);
       const byTemplate = new Map<string, typeof portrait>();
-      for (const t of portrait) { const l = byTemplate.get(t.template!); if (l) l.push(t); else byTemplate.set(t.template!, [t]); }
+      for (const t of portrait) { const l = byTemplate.get(t.art!); if (l) l.push(t); else byTemplate.set(t.art!, [t]); }
       for (const [key, list] of byTemplate) {
         const face = new InstancedMesh(this.shared.faceGeo, this.shared.faceMaterial(key, art.get(key)!), list.length);
         list.forEach((t, i) => face.setMatrixAt(i, m.compose(pos.set(t.x, t.ground, t.z), q, sc.set(t.size, 1, t.size))));
@@ -465,7 +466,7 @@ export class View3D {
     const used = new Set<string>();
     for (const t of s.minis) {
       if (!t.name) continue;
-      const withArt = !!(t.template && art.get(t.template));
+      const withArt = !!(t.art && art.get(t.art));
       // Topo da ficha: disco de 0,12; ou base de 0,08 + cápsula (0,42 + 2 × 0,192 do tamanho).
       const top = t.ground + (withArt ? 0.12 + 0.1 : 0.08 + t.size * (0.42 + 0.384));
       const label = this.label(t.name);

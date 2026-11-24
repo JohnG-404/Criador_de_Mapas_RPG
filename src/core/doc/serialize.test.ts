@@ -89,6 +89,23 @@ describe('arquivo .rpgmap', () => {
     expect(bad.objects.size).toBe(0);
   });
 
+  it('guarda a imagem própria do token e descarta referência a imagem inexistente', () => {
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    const doc = new MapDocument(opts);
+    doc.assets.put('img-t1', { id: 'img-t1', key: 'img-t1', name: 'Retrato', w: 1, h: 1, data: png, token: true });
+    doc.tokens.put('t', { id: 't', name: 'Ana', x: 32, y: 32, size: 1, color: '#2e6fb5', art: 'img-t1', template: 'guerreiro' });
+    const f = JSON.parse(docToJson(doc));
+    expect(f.assets.map((a: { key: string }) => a.key)).toEqual(['img-t1']);
+    const back = parseMap(f);
+    expect(back.tokens.get('t')).toMatchObject({ art: 'img-t1', template: 'guerreiro' });
+    expect(back.assets.get('img-t1')?.token).toBe(true);
+
+    f.assets = [];
+    expect(parseMap(f).tokens.get('t')?.art).toBeUndefined();
+    f.tokens[0].art = 'guerreiro';
+    expect(parseMap(f).tokens.get('t')?.art).toBeUndefined();
+  });
+
   it('guarda o relevo só quando o mapa não é plano', () => {
     const doc = new MapDocument(opts);
     expect(JSON.parse(docToJson(doc)).elevation).toBeUndefined();

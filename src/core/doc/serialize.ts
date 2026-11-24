@@ -1,6 +1,6 @@
 import { MapDocument, type NewMapOptions } from './MapDocument';
 import type { CustomAsset, MapLink, MapObject, Note, Token } from './objects';
-import { DEFAULT_VISION, OBJECT_ASSETS } from './objects';
+import { DEFAULT_VISION, isCustomAsset, OBJECT_ASSETS } from './objects';
 import { styleField, type WallSegment } from './walls';
 import { cleanSheet, tokenTemplate } from './tokenTemplates';
 import { cleanInitiative, type Initiative } from './initiative';
@@ -108,7 +108,7 @@ export function parseMap(text: string | MapFile): MapDocument {
       finite(a.w) && finite(a.h) && a.w > 0 && a.h > 0 && a.w <= 40 && a.h <= 40
     ) {
       const name = typeof a.name === 'string' ? a.name.slice(0, 40) : 'Imagem';
-      doc.assets.put(a.key, { id: a.key, key: a.key, name, w: a.w, h: a.h, data: a.data });
+      doc.assets.put(a.key, { id: a.key, key: a.key, name, w: a.w, h: a.h, data: a.data, ...(a.token === true ? { token: true } : {}) });
       assets.add(a.key);
     }
   }
@@ -127,6 +127,7 @@ export function parseMap(text: string | MapFile): MapDocument {
         color: typeof t.color === 'string' && /^#[0-9a-f]{6}$/i.test(t.color) ? t.color : '#888888',
         ...(t.pc ? { pc: true, vision: finite(t.vision) && t.vision > 0 ? Math.min(60, t.vision) : DEFAULT_VISION } : {}),
         ...(tokenTemplate(t.template) ? { template: t.template } : {}),
+        ...(typeof t.art === 'string' && isCustomAsset(t.art) && assets.has(t.art) ? { art: t.art } : {}),
         ...(cleanSheet(t.sheet) ? { sheet: cleanSheet(t.sheet) } : {}),
       });
     }
@@ -289,6 +290,6 @@ export function mapFileName(name: string) {
 }
 
 function usedAssets(doc: MapDocument): CustomAsset[] {
-  const used = new Set(doc.objects.all().map((o) => o.asset));
+  const used = new Set([...doc.objects.all().map((o) => o.asset), ...doc.tokens.all().flatMap((t) => (t.art ? [t.art] : []))]);
   return doc.assets.all().filter((a) => used.has(a.key));
 }

@@ -3,7 +3,7 @@ import type { MapDocument } from '../core/doc/MapDocument';
 import { objectAsset, type MapObject, type Token } from '../core/doc/objects';
 import { wallStyleOf, type WallSegment } from '../core/doc/walls';
 import { FLAT_OBJECTS, OBJECT_TEXTURE_URLS, WALL_TEXTURE_URLS } from './objectTextures';
-import { TOKEN_ART_URLS } from './tokenArt';
+import { TOKEN_ART_URLS, tokenArtKey } from './tokenArt';
 
 const SHADOW = { x: 3, y: 4, alpha: 0.38 };
 
@@ -106,6 +106,12 @@ export class ContentRenderer {
         this.objectTextures.set(a.id, tex);
         this.loadingCustom.delete(a.id);
         this.syncObjects();
+        // Tokens com esta imagem própria foram desenhados antes da textura existir: redesenha.
+        for (const t of this.doc.tokens.all()) {
+          const v = t.art === a.id ? this.tokenViews.get(t.id) : undefined;
+          if (v) { v.root.destroy({ children: true }); this.tokenViews.delete(t.id); }
+        }
+        this.syncTokens();
         this.onChange?.();
       }).catch(() => this.loadingCustom.delete(a.id));
     }
@@ -376,7 +382,8 @@ export class ContentRenderer {
     g.circle(SHADOW.x, SHADOW.y, r).fill({ color: 0x000000, alpha: 0.4 });
     g.circle(0, 0, r).fill(0x1b1712);
     g.circle(0, 0, r - 1.5).fill(0xd8c38a);
-    const art = t.template ? this.tokenTextures.get(t.template) : undefined;
+    const artKey = tokenArtKey(t);
+    const art = artKey ? (this.tokenTextures.get(artKey) ?? this.objectTextures.get(artKey)) : undefined;
     if (art) {
       // Retrato: anel na cor do token e fundo escuro, arte recortada no círculo.
       g.circle(0, 0, r - 1.5).fill(t.color);

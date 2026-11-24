@@ -57,6 +57,16 @@ describe('cena 3D', () => {
     expect(buildSceneData(doc).minis).toEqual([{ id: 't', name: 'Ana', color: '#b8322c', x: 2.5, z: 1.5, size: 2, ground: 0 }]);
   });
 
+  it('miniatura usa a imagem própria antes da arte do modelo', () => {
+    const doc = new MapDocument(opts);
+    doc.tokens.put('g', { id: 'g', name: 'Goblin', x: 16, y: 16, size: 1, color: '#b8322c', template: 'goblin' });
+    expect(buildSceneData(doc).minis[0].art).toBe('goblin');
+    doc.assets.put('img-r', { id: 'img-r', key: 'img-r', name: 'R', w: 1, h: 1, data: 'data:image/png;base64,iVBORw0KGgo=', token: true });
+    doc.assets.emit();
+    doc.tokens.put('g', { ...doc.tokens.get('g')!, art: 'img-r' });
+    expect(buildSceneData(doc).minis[0].art).toBe('img-r');
+  });
+
   it('água afunda o chão e o resto fica plano', () => {
     const doc = new MapDocument(opts);
     for (let r = 2; r < 6; r++) for (let c = 2; c < 6; c++) doc.terrain.set(c, r, 3);
