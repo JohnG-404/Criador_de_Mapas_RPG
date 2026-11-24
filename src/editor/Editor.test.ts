@@ -380,6 +380,23 @@ describe('Editor: modelos de token e ficha', () => {
     expect(c).toMatchObject({ pc: true, sheet: { san: 24, sanMax: 24 } });
   });
 
+  it('imagem própria: troca a arte do modelo, entra no histórico e pode ser tirada', () => {
+    const ed = new Editor({ ...DEFAULT_MAP, cols: 20, rows: 20 });
+    ed.setTokenTemplate('goblin');
+    ed.pointerDown({ x: 100, y: 100 }); ed.pointerUp();
+    ed.setTokenArt({ name: 'Meu goblin', data: 'data:image/png;base64,iVBORw0KGgo=' });
+    const t = ed.selectedToken()!;
+    expect(t.art).toMatch(/^img-/);
+    expect(t.template).toBe('goblin');
+    expect(ed.doc.assets.get(t.art!)).toMatchObject({ name: 'Meu goblin', token: true });
+    ed.undo();
+    expect(ed.selectedToken()!.art).toBeUndefined();
+    ed.redo();
+    expect(ed.selectedToken()!.art).toBe(t.art);
+    ed.clearTokenArt();
+    expect(ed.selectedToken()!.art).toBeUndefined();
+  });
+
   it('dano e cura respeitam o máximo; a ficha pode ser editada e desfeita', () => {
     const ed = new Editor({ ...DEFAULT_MAP, cols: 20, rows: 20 });
     ed.setTokenTemplate('goblin');

@@ -2,7 +2,7 @@ import { useEffect, useReducer, useState } from 'react';
 import type { Editor } from '../../editor/Editor';
 import type { Token } from '../../core/doc/objects';
 import { initiativeExpr } from '../../core/sheets/systems';
-import { TOKEN_ART_URLS } from '../../render/tokenArt';
+import { tokenArtUrl } from '../../render/tokenArt';
 import type { DiceTable } from '../../table/DiceTable';
 
 /** Redesenha quando a iniciativa ou os tokens do mapa atual mudam. */
@@ -19,7 +19,7 @@ function useInitiative(editor: Editor, docVersion: number) {
 }
 
 export function TokenThumb({ t }: { t: Token }) {
-  const art = t.template ? TOKEN_ART_URLS[t.template] : undefined;
+  const art = tokenArtUrl(t);
   return art
     ? <img className="token-thumb" src={art} alt="" style={{ borderColor: t.color }} />
     : <span className="token-thumb" style={{ background: t.color }}>{t.name.slice(0, 1).toUpperCase()}</span>;

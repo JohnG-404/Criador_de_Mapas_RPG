@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { OBJECT_ASSETS, TOKEN_COLORS, objectAsset } from '../core/doc/objects';
-import { readImageAsset } from './importImage';
+import { OBJECT_ASSETS, TOKEN_COLORS, objectAsset, type Token } from '../core/doc/objects';
+import { readImageAsset, readTokenImage } from './importImage';
 import { SYSTEMS, TOKEN_TEMPLATES, tokenTemplate, type TokenSystem } from '../core/doc/tokenTemplates';
 import { TOKEN_ART_URLS } from '../render/tokenArt';
 import { TERRAINS } from '../core/doc/terrain';
@@ -345,6 +345,7 @@ function SelectionPanel({ editor, onOpenSheet }: { editor: Editor; state: Editor
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
       />
       <ColorPicker value={tok!.color} onChange={(c) => editor.setTokenColor(c)} />
+      <TokenArtPicker editor={editor} token={tok!} />
       <div className="row-buttons">
         <button onClick={() => editor.resizeSelection(-1)} title="Diminuir ([)" aria-label="Diminuir">−</button>
         <span className="help">Tamanho {tok!.size.toLocaleString('pt-BR')}</span>
@@ -369,6 +370,33 @@ function SelectionPanel({ editor, onOpenSheet }: { editor: Editor; state: Editor
       <SheetPanel editor={editor} onOpenSheet={onOpenSheet} />
       <button className="danger" onClick={() => editor.deleteSelection()}>Apagar (Del)</button>
     </section>
+  );
+}
+
+/** Imagem própria do token selecionado (recortada no centro, em círculo). */
+function TokenArtPicker({ editor, token }: { editor: Editor; token: Token }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState('');
+  useEffect(() => setError(''), [token.id]);
+  async function onFile(file: File | undefined) {
+    setError('');
+    if (!file) return;
+    try {
+      editor.setTokenArt(await readTokenImage(file));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Não foi possível ler a imagem.');
+    }
+    if (input.current) input.current.value = '';
+  }
+  return (
+    <div className="token-art" data-testid="token-art">
+      <div className="row-buttons">
+        <button onClick={() => input.current?.click()}>{token.art ? 'Trocar imagem…' : 'Usar imagem própria…'}</button>
+        {token.art && <button onClick={() => editor.clearTokenArt()}>Tirar imagem</button>}
+      </div>
+      <input ref={input} type="file" accept="image/png,image/webp,image/jpeg" hidden aria-label="Imagem do token" onChange={(e) => onFile(e.target.files?.[0])} />
+      {error && <p className="help error" role="alert">{error}</p>}
+    </div>
   );
 }
 
@@ -503,7 +531,7 @@ function CustomAssets({ editor, state }: { editor: Editor; state: EditorState })
   const input = useRef<HTMLInputElement>(null);
   const doc = editor.doc;
   useEffect(() => doc.assets.onChange(() => bump((n) => n + 1)), [doc]);
-  const list = doc.assets.all();
+  const list = doc.assets.all().filter((a) => !a.token);
 
   async function onFiles(files: FileList | null) {
     setError('');

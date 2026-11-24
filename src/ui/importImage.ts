@@ -39,3 +39,26 @@ export async function readImageAsset(file: File): Promise<ImportedImage> {
     h: Math.round((DEFAULT_CELLS * h) / longest * 100) / 100,
   };
 }
+
+const TOKEN_SIDE = 256;
+
+/**
+ * Retrato de token: recorta o centro da imagem num quadrado de 256 px
+ * (o token mostra um círculo dentro dele) e devolve como data URL WebP.
+ */
+export async function readTokenImage(file: File): Promise<{ name: string; data: string }> {
+  if (!/^image\/(png|webp|jpeg)$/.test(file.type)) throw new Error('Use uma imagem PNG, WebP ou JPEG.');
+  if (file.size > MAX_BYTES) throw new Error('A imagem é grande demais (máximo de 15 MB).');
+  const bitmap = await createImageBitmap(file);
+  const side = Math.min(bitmap.width, bitmap.height);
+  const out = Math.min(TOKEN_SIDE, side);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = out;
+  const ctx = canvas.getContext('2d')!;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, out, out);
+  bitmap.close();
+  let data = canvas.toDataURL('image/webp', 0.9);
+  if (!data.startsWith('data:image/webp')) data = canvas.toDataURL('image/png');
+  return { name: file.name.replace(/\.[^.]+$/, '').slice(0, 40) || 'Retrato', data };
+}

@@ -446,6 +446,13 @@ export class Editor {
         // Ao voltar, os personagens que já estavam no destino são substituídos.
         for (const t of pcs) target.tokens.put(t.id, null);
         const spots = freeCellsAround(target, arrival, pcs.length);
+        // Retratos próprios vão junto (a imagem fica guardada em cada mapa).
+        let copied = false;
+        for (const t of pcs) {
+          const a = t.art ? from.assets.get(t.art) : undefined;
+          if (a && !target.assets.get(a.id)) { target.assets.put(a.id, a); copied = true; }
+        }
+        if (copied) target.assets.emit();
         pcs.forEach((t, i) => target.tokens.put(t.id, { ...t, ...(spots[i] ?? arrival) }));
         target.tokens.emit();
       }
@@ -815,6 +822,28 @@ export class Editor {
     if (pc) next.vision = t.vision ?? DEFAULT_VISION;
     else delete next.vision;
     this.commit(this.doc.tokens, pc ? 'Personagem de jogador' : 'Token comum', [[t.id, next]]);
+  }
+
+  /**
+   * Põe uma imagem própria (data URL quadrada, ver readTokenImage) no token
+   * selecionado. A imagem fica guardada no mapa; a troca entra no histórico.
+   */
+  setTokenArt(image: { name: string; data: string }) {
+    const t = this.selectedToken();
+    if (!t) return;
+    const key = newId(CUSTOM_ASSET_PREFIX);
+    this.doc.assets.put(key, { id: key, key, name: image.name.slice(0, 40) || t.name, w: 1, h: 1, data: image.data, token: true });
+    this.doc.assets.emit();
+    this.commit(this.doc.tokens, 'Imagem do token', [[t.id, { ...t, art: key }]]);
+  }
+
+  /** Volta o token selecionado para a arte do modelo (ou letra e cor). */
+  clearTokenArt() {
+    const t = this.selectedToken();
+    if (!t?.art) return;
+    const next: Token = { ...t };
+    delete next.art;
+    this.commit(this.doc.tokens, 'Tirar imagem do token', [[t.id, next]]);
   }
 
   setTokenVision(cells: number) {

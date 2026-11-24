@@ -39,4 +39,17 @@ describe('sala online', () => {
     expect(m.notes).toEqual([]);
     expect(m.tokens.map((t) => t.name).sort()).toEqual(['Ana', 'Goblin']);
   });
+
+  it('jogadores não recebem a imagem própria de um inimigo escondido', () => {
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    const doc = new MapDocument({ name: 't', gridKind: 'square', cols: 10, rows: 10, fill: 1, cellMeters: 1.5 });
+    doc.assets.put('img-orc', { id: 'img-orc', key: 'img-orc', name: 'Orc', w: 1, h: 1, data: png, token: true });
+    doc.assets.put('img-ana', { id: 'img-ana', key: 'img-ana', name: 'Ana', w: 1, h: 1, data: png, token: true });
+    doc.tokens.put('a', { id: 'a', name: 'Orc', x: 16, y: 16, size: 1, color: '#b8322c', art: 'img-orc' });
+    doc.tokens.put('c', { id: 'c', name: 'Ana', x: 200, y: 200, size: 1, color: '#2e6fb5', pc: true, art: 'img-ana' });
+    doc.fog.set(0, 0, FOG_HIDDEN);
+    doc.fog.flush();
+    const m = forPlayers(doc);
+    expect(m.assets?.map((a) => a.key)).toEqual(['img-ana']);
+  });
 });

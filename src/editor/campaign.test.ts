@@ -41,7 +41,8 @@ describe('mapas ligados', () => {
     ed.pointerDown(center(ed, 6, 5)); ed.pointerUp();
     ed.pointerDown(center(ed, 8, 8)); ed.pointerUp();
     const [a, b] = masmorra.tokens.all();
-    masmorra.tokens.put(a.id, { ...a, pc: true, vision: 6 });
+    masmorra.assets.put('img-ana', { id: 'img-ana', key: 'img-ana', name: 'Ana', w: 1, h: 1, data: 'data:image/png;base64,iVBORw0KGgo=', token: true });
+    masmorra.tokens.put(a.id, { ...a, pc: true, vision: 6, art: 'img-ana' });
     masmorra.tokens.put(b.id, { ...b, pc: true, vision: 6 });
 
     expect(ed.followLink(linkId)).toBe(true);
@@ -50,6 +51,8 @@ describe('mapas ligados', () => {
     expect(masmorra.tokens.size).toBe(1);
     const arrived = porao.tokens.all();
     expect(arrived.map((t) => t.id).sort()).toEqual([a.id, b.id].sort());
+    // O retrato próprio vai junto para o mapa de destino.
+    expect(porao.assets.get('img-ana')?.token).toBe(true);
     // Perto da passagem de volta, sem ficar em cima dela nem um em cima do outro.
     const back = porao.links.all()[0];
     const cells = arrived.map((t) => porao.grid.worldToCell(t)!);
